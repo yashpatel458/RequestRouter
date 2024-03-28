@@ -88,17 +88,36 @@ void crequest(int client_fd) {
 void handle_dirlist_a(int client_fd) {
     DIR *d;
     struct dirent *dir;
-    d = opendir(".");
+    char *dirList[1024];  // Assuming we won't have more than 1024 directories
+    int count = 0;
+
+    d = opendir(".");  // Open the current directory
     if (d) {
-        char response[1024] = "";
         while ((dir = readdir(d)) != NULL) {
             if (dir->d_type == DT_DIR) {  // Check if it's a directory
-                strcat(response, dir->d_name);
-                strcat(response, "\n");
+                dirList[count] = strdup(dir->d_name);  // Copy directory name
+                count++;
             }
         }
         closedir(d);
+
+        // Sort the directory list alphabetically
+        qsort(dirList, count, sizeof(char*), (int (*)(const void*, const void*)) strcmp);
+
+        // Build the response string
+        char response[8192] = "";  // Larger buffer for accumulating directory names
+        for (int i = 0; i < count; i++) {
+            strcat(response, dirList[i]);
+            strcat(response, "\n");
+            free(dirList[i]);  // Free the duplicated string
+        }
+
+        // Send the response to the client
         write(client_fd, response, strlen(response));
+    } else {
+        // Send an error message if directory can't be opened
+        char *errorMsg = "Failed to open directory.";
+        write(client_fd, errorMsg, strlen(errorMsg));
     }
 }
 

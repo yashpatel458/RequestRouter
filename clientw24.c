@@ -8,27 +8,7 @@
 
 #define PORT 8080
 
-int validate_command(const char* command) {
-    // Improved validation logic
-    if (strncmp(command, "dirlist -a", 10) == 0 || strncmp(command, "dirlist -t", 10) == 0) {
-        return 1;  // Valid dirlist commands
-    } else if (strncmp(command, "w24fn ", 6) == 0) {
-        // Validate w24fn command further if necessary
-        return 1;
-    } else if (strncmp(command, "w24fz ", 6) == 0) {
-        // Validate w24fz command further if necessary
-        return 1;
-    } else if (strncmp(command, "w24ft ", 6) == 0) {
-        // Validate w24ft command further if necessary
-        return 1;
-    } else if (strncmp(command, "w24fdb ", 7) == 0 || strncmp(command, "w24fda ", 7) == 0) {
-        // Validate w24fdb and w24fda commands further if necessary
-        return 1;
-    } else if (strcmp(command, "quitc") == 0) {
-        return 1;  // Valid quit command
-    }
-    return 0;  // Invalid command
-}
+int validate_command(const char* command);
 
 int main() {
     int sock = 0;
@@ -71,4 +51,26 @@ int main() {
 
     close(sock);
     return 0;
+}
+
+int validate_command(const char* command) {
+    // Improved validation logic
+    if (strncmp(command, "dirlist -a", 10) == 0 || strncmp(command, "dirlist -t", 10) == 0) {
+        return 1;  // Valid dirlist commands
+    } else if (strncmp(command, "w24fn ", 6) == 0) {
+        // Validate w24fn command further if necessary
+        return 1;
+    } else if (strncmp(command, "w24fz ", 6) == 0) {
+        // Validate w24fz command further if necessary
+        return 1;
+    } else if (strncmp(command, "w24ft ", 6) == 0) {
+        // Validate w24ft command further if necessary
+        return 1;
+    } else if (strncmp(command, "w24fdb ", 7) == 0 || strncmp(command, "w24fda ", 7) == 0) {
+        // Validate w24fdb and w24fda commands further if necessary
+        return 1;
+    } else if (strcmp(command, "quitc") == 0) {
+        return 1;  // Valid quit command
+    }
+    return 0;  // Invalid command
 }

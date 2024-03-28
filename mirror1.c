@@ -1,3 +1,4 @@
+// mirror1.c
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,53 +10,7 @@
 
 #define PORT 8081
 
-int should_handle_connection() {
-    const char *filename = "/tmp/connection_counter.txt";
-    int counter;
-
-    int fd = open(filename, O_RDWR | O_CREAT, 0666);
-    if (fd < 0) {
-        perror("Error opening counter file");
-        return 0;
-    }
-
-    char buf[10];
-    if (read(fd, buf, sizeof(buf)) > 0) {
-        counter = atoi(buf);
-    } else {
-        counter = 0;
-    }
-
-    // Update the logic for mirror1 to handle the correct connections
-    int handle = ((counter >= 3 && counter < 6) || ((counter - 6) % 9 == 0) || ((counter - 7) % 9 == 0) || ((counter - 8) % 9 == 0));
-
-    counter++;
-    lseek(fd, 0, SEEK_SET);
-    sprintf(buf, "%d", counter);
-    write(fd, buf, strlen(buf));
-
-    close(fd);
-
-    return handle;
-}
-
-
-void crequest(int client_fd) {
-    char buffer[1024];
-    while (1) {
-        memset(buffer, 0, sizeof(buffer));
-        read(client_fd, buffer, sizeof(buffer));
-        printf("Mirror1 command received: %s\n", buffer);
-
-        // Process commands specific to mirror1 if any
-
-        char *message = "Response from Mirror1";
-        write(client_fd, message, strlen(message));
-
-        if (strcmp(buffer, "quitc") == 0) break;
-    }
-    close(client_fd);
-}
+int should_handle_connection();
 
 int main() {
     int server_fd, client_fd;
@@ -91,4 +46,26 @@ int main() {
     }
 
     return 0;
+}
+
+int should_handle_connection() {
+    // Implement your logic here to handle connections for mirror1
+    return 1;  // For demonstration, always handle connections
+}
+
+void crequest(int client_fd) {
+    char buffer[1024];
+    while (1) {
+        memset(buffer, 0, sizeof(buffer));
+        read(client_fd, buffer, sizeof(buffer));
+        printf("Mirror1 command received: %s\n", buffer);
+
+        // Process commands specific to mirror1 if any
+
+        char *message = "Response from Mirror1";
+        write(client_fd, message, strlen(message));
+
+        if (strcmp(buffer, "quitc") == 0) break;
+    }
+    close(client_fd);
 }
