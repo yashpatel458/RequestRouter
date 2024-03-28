@@ -13,6 +13,49 @@
 
 #define PORT 8080
 
+void crequest(int client_fd);
+void handle_dirlist_a(int client_fd);
+void handle_dirlist_t(int client_fd);
+void handle_w24fn(int client_fd, const char *filename);
+void handle_w24fz(int client_fd, const char *sizeRange);
+void handle_w24ft(int client_fd, const char *extensions);
+void handle_w24fdb(int client_fd, const char *date);
+void handle_w24fda(int client_fd, const char *date);
+
+int main() {
+    int server_fd, client_fd;
+    struct sockaddr_in address;
+    int opt = 1;
+    int addrlen = sizeof(address);
+
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+
+    bind(server_fd, (struct sockaddr *)&address, sizeof(address));
+    listen(server_fd, 3);
+
+    while (1) {
+        client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+        if (client_fd < 0) {
+            perror("accept");
+            continue;
+        }
+
+        // Fork a child process to handle the request
+        if (fork() == 0) {
+            close(server_fd);
+            crequest(client_fd);
+            exit(0);
+        }
+        close(client_fd);
+    }
+
+    return 0;
+}
+
 void crequest(int client_fd) {
     char buffer[1024];
     while (1) {
@@ -103,39 +146,4 @@ void handle_w24fda(int client_fd, const char* date) {
     // Logic to create a tar.gz file of files after a specific date
     char *response = "Archive created for files after date";
     write(client_fd, response, strlen(response));
-}
-
-
-int main() {
-    int server_fd, client_fd;
-    struct sockaddr_in address;
-    int opt = 1;
-    int addrlen = sizeof(address);
-
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
-
-    bind(server_fd, (struct sockaddr *)&address, sizeof(address));
-    listen(server_fd, 3);
-
-    while (1) {
-        client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-        if (client_fd < 0) {
-            perror("accept");
-            continue;
-        }
-
-        // Fork a child process to handle the request
-        if (fork() == 0) {
-            close(server_fd);
-            crequest(client_fd);
-            exit(0);
-        }
-        close(client_fd);
-    }
-
-    return 0;
 }

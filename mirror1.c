@@ -12,36 +12,33 @@
 int should_handle_connection() {
     const char *filename = "/tmp/connection_counter.txt";
     int counter;
-    
-    // Open the counter file
+
     int fd = open(filename, O_RDWR | O_CREAT, 0666);
     if (fd < 0) {
         perror("Error opening counter file");
         return 0;
     }
 
-    // Read the current counter value
     char buf[10];
     if (read(fd, buf, sizeof(buf)) > 0) {
         counter = atoi(buf);
     } else {
-        counter = 0;  // Default to 0 if file is empty or unreadable
+        counter = 0;
     }
 
-    // Check if this server should handle the connection
-    int handle = (counter % 3) == 1;  // mirror1 handles every third connection after serverw24
+    // Update the logic for mirror1 to handle the correct connections
+    int handle = ((counter >= 3 && counter < 6) || ((counter - 6) % 9 == 0) || ((counter - 7) % 9 == 0) || ((counter - 8) % 9 == 0));
 
-    // Update the counter
-    counter = (counter + 1) % 3;  // Reset after 3 to cycle between serverw24, mirror1, and mirror2
+    counter++;
     lseek(fd, 0, SEEK_SET);
     sprintf(buf, "%d", counter);
     write(fd, buf, strlen(buf));
 
-    // Close the file
     close(fd);
 
     return handle;
 }
+
 
 void crequest(int client_fd) {
     char buffer[1024];
