@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <arpa/inet.h>  // Include the header file for inet_pton
 
 #define PORT 8080
 #define SERVER_IP "127.0.0.1"  // Update this with the actual server IP address
