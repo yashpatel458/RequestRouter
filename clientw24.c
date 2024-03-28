@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #define PORT 8080
+#define SERVER_IP "127.0.0.1"  // Update this with the actual server IP address
 
 int validate_command(const char* command);
 
@@ -17,13 +18,26 @@ int main() {
     char command[256];
 
     sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        printf("\nSocket creation error\n");
+        return -1;
+    }
+
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(PORT);
 
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        printf("\nConnection Failed \n");
+    // Convert IPv4 and IPv6 addresses from text to binary form
+    if (inet_pton(AF_INET, SERVER_IP, &serv_addr.sin_addr) <= 0) {
+        printf("\nInvalid address/ Address not supported\n");
         return -1;
     }
+
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        printf("\nConnection Failed\n");
+        return -1;
+    }
+
+    printf("Connected to server\n");
 
     while (1) {
         printf("Enter command: ");
