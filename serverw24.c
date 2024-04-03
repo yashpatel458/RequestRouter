@@ -186,47 +186,62 @@ struct file_info {
 static struct file_info found_file;
 static char target_filename[256];
 
-// This callback function will be called by nftw for each file/directory
-static int find_file(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
-    printf("Searching in: %s\n", fpath);  // Debug output
-    if (typeflag == FTW_F) {
-        const char *base = basename((char*)fpath);
-        if (strcmp(target_filename, base) == 0) {
-            printf("File found: %s\n", fpath);  // Debug output
-            strcpy(found_file.path, fpath);
-            found_file.size = sb->st_size;
-            found_file.mode = sb->st_mode;
-            found_file.mtime = sb->st_mtime;
-            return 1;  // Stop nftw search once the file is found
+static int find_file_in_directory(const char *dir_path) {
+    DIR *dir = opendir(dir_path);
+    if (dir == NULL) {
+        return 0;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG && strcmp(target_filename, entry->d_name) == 0) {
+            // Construct the full path for the file
+            snprintf(found_file.path, PATH_MAX, "%s/%s", dir_path, entry->d_name);
+
+            struct stat file_stat;
+            if (stat(found_file.path, &file_stat) == 0) {
+                found_file.size = file_stat.st_size;
+                found_file.mode = file_stat.st_mode;
+                found_file.mtime = file_stat.st_mtime;
+                closedir(dir);
+                return 1;  // File found
+            }
+        } else if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            char next_dir_path[PATH_MAX];
+            snprintf(next_dir_path, PATH_MAX, "%s/%s", dir_path, entry->d_name);
+            
+            if (find_file_in_directory(next_dir_path)) {
+                closedir(dir);
+                return 1;  // File found in sub-directory
+            }
         }
     }
-    return 0;  // Continue searching
+
+    closedir(dir);
+    return 0;  // File not found
 }
 
 void handle_w24fn(int client_fd, const char *filename) {
-    // Clear previous search results
     memset(&found_file, 0, sizeof(found_file));
     strncpy(target_filename, filename, sizeof(target_filename) - 1);
 
-    // Search for the file starting from the root directory
-    nftw("/", find_file, 20, 0);
+    char *home_dir = getenv("HOME"); // Get the home directory path
+    if (!home_dir) {
+        home_dir = "/"; // Fallback to root if HOME is not set
+    }
 
-    if (found_file.path[0] != '\0') {
-        // File found, send details to the client
-        char file_info[1024];
+    if (find_file_in_directory(home_dir)) {
+        char file_info[1024] = {0}; // Initialize buffer to zero
         sprintf(file_info, "File: %s, Size: %lld, Permissions: %o, Last Modified: %s",
                 found_file.path, (long long)found_file.size, found_file.mode & 0777,
                 ctime(&found_file.mtime));
-         int bytes_sent = write(client_fd, file_info, strlen(file_info));
-         printf("Sent %d bytes to client.\n", bytes_sent);  // Debug output
-         fflush(stdout); // If you are writing to stdout or similar. Not directly applicable here but generally useful.
-
+        write(client_fd, file_info, strlen(file_info));
     } else {
-        // File not found
-        char *msg = "File not found\n";
+        char msg[1024] = "File not found\n"; // Initialize message buffer
         write(client_fd, msg, strlen(msg));
     }
 }
+
 
 // ------------------------------------------------------------------//
 
@@ -323,7 +338,7 @@ void handle_w24ft(int client_fd, const char *extensionList) {
     // Initialize the tar file
     system("tar -cf " TAR_FILE " --files-from /dev/null");
 
-    nftw("~", check_file_extension, 20, FTW_PHYS);
+    nftw("~", check_file_extension, 20, FTW_NS);
 
     // Check if the tar file has any content
     struct stat tar_stat;
@@ -368,7 +383,7 @@ void handle_w24fdb(int client_fd, const char *dateStr) {
     // Initialize the tar file
     system("tar -cf " TAR_FILE_Date " --files-from /dev/null");
 
-    nftw("~", file_date_filter_db, 20, FTW_PHYS);
+    nftw("~", file_date_filter_db, 20, FTW_NS);
 
     // Check if the tar file has any content
     struct stat tar_stat;
@@ -407,7 +422,7 @@ void handle_w24fda(int client_fd, const char *dateStr) {
     // Initialize the tar file
     system("tar -cf " TAR_FILE_Date " --files-from /dev/null");
 
-    nftw("~", file_date_filter_da, 20, FTW_PHYS);
+    nftw("~", file_date_filter_da, 20, FTW_NS);
 
     // Check if the tar file has any content
     struct stat tar_stat;
