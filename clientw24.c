@@ -33,7 +33,14 @@ int main() {
         return -1;
     }
 
-    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    /*
+    inet_ptron  converts  a  character string representing an IPv4 or IPv6 address into a binary address structure.  The af argument must be either AF_INET or AF_INET6.  
+    The src argument points to a character string containing an IPv4 or IPv6 network address in dotted-decimal format, "ddd.ddd.ddd.ddd" or "xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx".  
+    The dst argument points to a buffer where the function stores the resulting address structure.  The size of this buffer is determined by the af argument.  This function returns 1 if the address was valid for the specified address family, or 0 if the address was not parseable in the specified address family, or -1 if some other error occurred.
+    
+    */ 
+
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) { // Socket descriptor, Address of the server, Size of the address
         printf("\nConnection Failed\n");
         return -1;
     }

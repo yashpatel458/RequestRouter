@@ -15,7 +15,6 @@
 #include <limits.h>
 #include <tar.h>
 
-
 #define PORT 8080
 #define PATH_MAX 4096
 #define MAX_EXTENSIONS 3
@@ -37,17 +36,45 @@ int main() {
     int opt = 1;
     int addrlen = sizeof(address);
 
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    server_fd = socket(AF_INET, SOCK_STREAM, 0); // socket() - creates a listening socket
 
-    bind(server_fd, (struct sockaddr *)&address, sizeof(address));
-    listen(server_fd, 3);
+/*
+ARG1 // AF_INET - Address family for IPv4
+ARG2 // SOCK_STREAM - Type of socket (TCP) // SOCK_DGRAM - Type of socket (UDP)
+ARG3 // 0 - Protocol (0 means use default protocol for the given socket type)
+*/
+
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
+    address.sin_family = AF_INET; // Address family for IPv4
+    address.sin_addr.s_addr = INADDR_ANY; // INADDR_ANY - Binds to all available interfaces
+    address.sin_port = htons(PORT); // htons() - converts the port number to network byte order | host to network short/long
+
+
+    bind(server_fd, (struct sockaddr *)&address, sizeof(address)); // bind() - binds to IP and port address 
+
+/*
+ARG1 // server_fd - socket descriptor
+ARG2 // (struct sockaddr *)&address - pointer to the address structure
+ARG3 // sizeof(address) - size of the address structure
+*/
+
+
+    listen(server_fd, 3); // server listens for incoming client connections
+
+/*
+ARG1 // server_fd - socket descriptor
+ARG2 // 3 - maximum number of client connections that can be queued
+*/
 
     while (1) {
-        client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+        client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen); // accept() - accepts first incoming client connections in the queue, if no connection is present, it blocks and waits for a connection
+
+        /*
+        ARG1 // server_fd - socket descriptor
+        ARG2 // (struct sockaddr *)&address - pointer to the address structure
+        ARG3 // (socklen_t*)&addrlen - size of the address structure
+        */
+
         if (client_fd < 0) {
             perror("accept");
             continue;
@@ -401,7 +428,6 @@ void handle_w24fdb(int client_fd, const char *dateStr) {
 
 
 static time_t target_date;
-
 static int file_date_filter_da(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
     if (typeflag == FTW_F) {
         if (difftime(sb->st_mtime, target_date) >= 0) { // Check if the file modification time is greater than or equal to target date
