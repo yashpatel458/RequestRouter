@@ -4,6 +4,7 @@
         "stat.h": "c",
         "fcntl.h": "c",
         "socket.h": "c",
-        "in.h": "c"
+        "in.h": "c",
+        "string.h": "c"
     }
 }

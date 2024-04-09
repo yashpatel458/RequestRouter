@@ -124,24 +124,38 @@ void crequest(int client_fd) {
     close(client_fd);
 }
 
+// ------------------------------------------------------------------//
+
+
+// Comparison function for qsort
+int compare_strings(const void *a, const void *b) {
+    const char *str1 = *(const char **)a;
+    const char *str2 = *(const char **)b;
+    return strcasecmp(str1, str2);
+}
+
 void handle_dirlist_a(int client_fd) {
     DIR *d;
     struct dirent *dir;
     char *dirList[1024];  // Assuming we won't have more than 1024 directories
     int count = 0;
 
-    d = opendir(".");  // Open the current directory
+    char *home_dir = getenv("HOME"); // Get the home directory path
+    if (!home_dir) {
+        home_dir = "/"; // Fallback to root if HOME is not set
+    }
+
+    d = opendir(home_dir);  // Open the home directory using the variable
     if (d) {
         while ((dir = readdir(d)) != NULL) {
-            if (dir->d_type == DT_DIR) {  // Check if it's a directory
-                dirList[count] = strdup(dir->d_name);  // Copy directory name
-                count++;
+            if (dir->d_type == DT_DIR && dir->d_name[0] != '.' && strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0) {
+                dirList[count++] = strdup(dir->d_name);  // Copy directory name
             }
         }
         closedir(d);
 
-        // Sort the directory list alphabetically
-        qsort(dirList, count, sizeof(char*), (int (*)(const void*, const void*)) strcmp);
+        // Sort the directory list alphabetically in a case-insensitive manner
+        qsort(dirList, count, sizeof(char*), compare_strings);
 
         // Build the response string
         char response[8192] = "";  // Larger buffer for accumulating directory names
@@ -159,6 +173,8 @@ void handle_dirlist_a(int client_fd) {
         write(client_fd, errorMsg, strlen(errorMsg));
     }
 }
+
+
 
 // ------------------------------------------------------------------//
 
