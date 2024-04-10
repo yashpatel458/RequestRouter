@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <arpa/inet.h>  // Include the header file for inet_pton
+#define BUFFER_SIZE 65536  // Increase buffer size
 
 #define PORT 8080
 #define SERVER_IP "127.0.0.1"  // Update this with the actual server IP address
@@ -15,7 +16,7 @@ int validate_command(const char* command);
 int main() {
     int sock = 0;
     struct sockaddr_in serv_addr;
-    char buffer[1024] = {0};
+    char buffer[BUFFER_SIZE] = {0};
     char command[256];
 
     sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -62,7 +63,7 @@ int main() {
         if (strcmp(command, "quitc") == 0) {
             break;
         }
-
+         memset(buffer, 0, sizeof(buffer));  // Clear buffer before reading
         int bytes_read = read(sock, buffer, sizeof(buffer));
         if (bytes_read > 0) {
             printf("Response from server: %s\n", buffer);
