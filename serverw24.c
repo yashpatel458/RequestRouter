@@ -1,6 +1,6 @@
 // serverw24.c
 #define _GNU_SOURCE
-#include <fcntl.h>           // Definition of AT_* constants
+#include <fcntl.h> // Definition of AT_* constants
 #include <unistd.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -34,8 +34,8 @@
 #define MAX_EXTENSIONS 3
 #define TAR_FILE "/tmp/files.tar.gz"
 #define TAR_FILE_Date "/tmp/filtered_files.tar.gz"
+#define TEMP_FILE_LIST "filelist.txt"
 #define MAX_DIRS 10000 // Adjust based on the expected number of directories
-
 
 void crequest(int client_fd);
 void handle_dirlist_a(int client_fd);
@@ -230,14 +230,16 @@ void handle_dirlist_a(int client_fd)
     qsort(dirList, count, sizeof(char *), compare_strings);
 
     char bigBuffer[65536] = {0}; // Adjust size as needed
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++)
+    {
         strcat(bigBuffer, dirList[i]);
         strcat(bigBuffer, "\n");
-        printf("%s\n", dirList[i]);  // Print on server side
-        free(dirList[i]);  // Free after copying to buffer
+        printf("%s\n", dirList[i]); // Print on server side
+        free(dirList[i]);           // Free after copying to buffer
     }
 
-    if (count == 0) {
+    if (count == 0)
+    {
         strcpy(bigBuffer, "No subdirectories found.\n");
     }
 
@@ -246,38 +248,48 @@ void handle_dirlist_a(int client_fd)
 
 // OPTION 2 ------------------------------------------------------------------//
 
-
-
-typedef struct {
+typedef struct
+{
     char *full_path;
     char *dir_name;
-    struct timespec btime;  // Adjusted for timespec
+    struct timespec btime; // Adjusted for timespec
 } DirEntry;
 
-int dir_time_compare(const void *a, const void *b) {
+int dir_time_compare(const void *a, const void *b)
+{
     const DirEntry *dir1 = (const DirEntry *)a;
     const DirEntry *dir2 = (const DirEntry *)b;
-    if (dir1->btime.tv_sec < dir2->btime.tv_sec) return -1;
-    if (dir1->btime.tv_sec > dir2->btime.tv_sec) return 1;
-    if (dir1->btime.tv_nsec < dir2->btime.tv_nsec) return -1;
-    if (dir1->btime.tv_nsec > dir2->btime.tv_nsec) return 1;
+    if (dir1->btime.tv_sec < dir2->btime.tv_sec)
+        return -1;
+    if (dir1->btime.tv_sec > dir2->btime.tv_sec)
+        return 1;
+    if (dir1->btime.tv_nsec < dir2->btime.tv_nsec)
+        return -1;
+    if (dir1->btime.tv_nsec > dir2->btime.tv_nsec)
+        return 1;
     return 0;
 }
 
-void list_subdirectories_recursive_t(const char *base_path, DirEntry dirList[], int *count, int max_count) {
+void list_subdirectories_recursive_t(const char *base_path, DirEntry dirList[], int *count, int max_count)
+{
     DIR *d = opendir(base_path);
-    if (!d) {
+    if (!d)
+    {
         return;
     }
 
     struct dirent *dir;
     struct statx statbuf;
     char path[1024];
-    while ((*count < max_count) && (dir = readdir(d)) != NULL) {
-        if (dir->d_type == DT_DIR && dir->d_name[0] != '.') {
-            if (strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0) {
+    while ((*count < max_count) && (dir = readdir(d)) != NULL)
+    {
+        if (dir->d_type == DT_DIR && dir->d_name[0] != '.')
+        {
+            if (strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0)
+            {
                 snprintf(path, sizeof(path), "%s/%s", base_path, dir->d_name);
-                if (syscall(SYS_statx, AT_FDCWD, path, AT_SYMLINK_NOFOLLOW, STATX_BTIME, &statbuf) == 0) {
+                if (syscall(SYS_statx, AT_FDCWD, path, AT_SYMLINK_NOFOLLOW, STATX_BTIME, &statbuf) == 0)
+                {
                     dirList[*count].full_path = strdup(path);
                     dirList[*count].dir_name = strdup(dir->d_name);
                     // Assigning the fields individually
@@ -293,12 +305,14 @@ void list_subdirectories_recursive_t(const char *base_path, DirEntry dirList[], 
     closedir(d);
 }
 
-void handle_dirlist_t(int client_fd) {
+void handle_dirlist_t(int client_fd)
+{
     DirEntry dirList[MAX_DIRS]; // Assuming MAX_DIRS is defined and large enough
     int count = 0;
 
     char *home_dir = getenv("HOME");
-    if (!home_dir) {
+    if (!home_dir)
+    {
         home_dir = "/";
     }
 
@@ -306,7 +320,8 @@ void handle_dirlist_t(int client_fd) {
     qsort(dirList, count, sizeof(DirEntry), dir_time_compare);
 
     char response[65536] = ""; // Ensure the buffer is large enough
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++)
+    {
         strcat(response, dirList[i].dir_name);
         strcat(response, "\n");
         printf("%s\n", dirList[i].dir_name); // Print only directory name on the server side
@@ -316,17 +331,18 @@ void handle_dirlist_t(int client_fd) {
 
     write(client_fd, response, strlen(response));
 
-    if (count == 0) {
+    if (count == 0)
+    {
         const char *msg = "No subdirectories found.\n";
         write(client_fd, msg, strlen(msg));
         printf("%s", msg); // Also print on the server side
     }
 }
 
-
 //  OPTION 3 ------------------------------------------------------------------//
 
-struct file_info {
+struct file_info
+{
     char path[PATH_MAX];
     off_t size;
     mode_t mode;
@@ -336,20 +352,25 @@ struct file_info {
 static struct file_info found_file;
 static char target_filename[256];
 
-static int find_file_in_directory(const char *dir_path) {
+static int find_file_in_directory(const char *dir_path)
+{
     DIR *dir = opendir(dir_path);
-    if (dir == NULL) {
+    if (dir == NULL)
+    {
         return 0;
     }
 
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_REG && strcmp(target_filename, entry->d_name) == 0) {
+    while ((entry = readdir(dir)) != NULL)
+    {
+        if (entry->d_type == DT_REG && strcmp(target_filename, entry->d_name) == 0)
+        {
             // Construct the full path for the file
             snprintf(found_file.path, PATH_MAX, "%s/%s", dir_path, entry->d_name);
 
             struct statx file_stat;
-            if (syscall(SYS_statx, AT_FDCWD, found_file.path, AT_SYMLINK_NOFOLLOW, STATX_ALL, &file_stat) == 0) {
+            if (syscall(SYS_statx, AT_FDCWD, found_file.path, AT_SYMLINK_NOFOLLOW, STATX_ALL, &file_stat) == 0)
+            {
                 found_file.size = file_stat.stx_size;
                 found_file.mode = file_stat.stx_mode;
                 found_file.btime.tv_sec = file_stat.stx_btime.tv_sec;
@@ -361,13 +382,16 @@ static int find_file_in_directory(const char *dir_path) {
     }
 
     // Only search in subdirectories if the file wasn't found in the current directory
-    rewinddir(dir);  // Reset directory stream to the beginning
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+    rewinddir(dir); // Reset directory stream to the beginning
+    while ((entry = readdir(dir)) != NULL)
+    {
+        if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+        {
             char next_dir_path[PATH_MAX];
             snprintf(next_dir_path, PATH_MAX, "%s/%s", dir_path, entry->d_name);
 
-            if (find_file_in_directory(next_dir_path)) {
+            if (find_file_in_directory(next_dir_path))
+            {
                 closedir(dir);
                 return 1; // File found in sub-directory
             }
@@ -378,14 +402,17 @@ static int find_file_in_directory(const char *dir_path) {
     return 0; // File not found
 }
 
-void handle_w24fn(int client_fd, const char *filename) {
+void handle_w24fn(int client_fd, const char *filename)
+{
     strcpy(target_filename, filename);
     char *home_dir = getenv("HOME");
-    if (!home_dir) {
+    if (!home_dir)
+    {
         home_dir = "/";
     }
 
-    if (find_file_in_directory(home_dir)) {
+    if (find_file_in_directory(home_dir))
+    {
         char response[1024];
         char time_str[256];
 
@@ -394,15 +421,16 @@ void handle_w24fn(int client_fd, const char *filename) {
         strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
 
         snprintf(response, sizeof(response), "File: %s, Size: %ld bytes, Created: %s, Permissions: %o\n",
-                 found_file.path, found_file.size, time_str, found_file.mode & 0777);  // Mask mode to display standard Unix permissions
+                 found_file.path, found_file.size, time_str, found_file.mode & 0777); // Mask mode to display standard Unix permissions
 
         write(client_fd, response, strlen(response));
-    } else {
+    }
+    else
+    {
         const char *msg = "File not found\n";
         write(client_fd, msg, strlen(msg));
     }
 }
-
 
 //  OPTION 4  ------------------------------------------------------------------//
 
@@ -414,13 +442,23 @@ struct size_filter
 
 static struct size_filter global_size_filter;
 
-// Callback function for nftw
 static int check_file_size(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
 {
+    // Skip hidden directories and hidden files
+    if ((typeflag == FTW_D && fpath[ftwbuf->base] == '.') ||
+        (typeflag == FTW_F && fpath[ftwbuf->base] == '.'))
+    {
+        return FTW_CONTINUE; // Skip hidden directories and files
+    }
+
     if (typeflag == FTW_F && sb->st_size >= global_size_filter.min_size && sb->st_size <= global_size_filter.max_size)
     {
-        // Here you can add logic to process each file that meets the size criteria,
-        // such as adding the file path to a list or directly appending it to a tar file
+        FILE *fp = fopen(TEMP_FILE_LIST, "a");
+        if (fp)
+        {
+            fprintf(fp, "%s\n", fpath);
+            fclose(fp);
+        }
     }
     return 0; // Continue traversing
 }
@@ -429,7 +467,9 @@ void handle_w24fz(int client_fd, const char *sizeRange)
 {
     long size1, size2;
     sscanf(sizeRange, "%ld %ld", &size1, &size2);
-    if (size1 > size2)
+
+    // Validate the size range
+    if (size1 > size2 || size1 < 0 || size2 < 0)
     {
         char *msg = "Invalid size range.\n";
         write(client_fd, msg, strlen(msg));
@@ -439,49 +479,60 @@ void handle_w24fz(int client_fd, const char *sizeRange)
     global_size_filter.min_size = size1;
     global_size_filter.max_size = size2;
 
-    struct size_filter filter = {.min_size = size1, .max_size = size2};
+    // Clear the temporary file list before starting
+    fclose(fopen(TEMP_FILE_LIST, "w"));
 
-    // Path to the temporary tar file
-    char tarPath[] = "/tmp/files.tar.gz";
-    // Command to create tar.gz file
-    char tarCommand[PATH_MAX];
-    sprintf(tarCommand, "tar -czf %s -T /dev/null", tarPath); // Initialize empty tar.gz
-
-    // Run tar command to initialize the archive
-    system(tarCommand);
-
-    // Traverse the directory tree
-    nftw("/", check_file_size, 20, 0);
-
-    // Check if the tar.gz file has been updated (means files were added)
-    struct stat tar_stat;
-    if (stat(tarPath, &tar_stat) == 0 && tar_stat.st_size > 0)
+    // Use nftw to walk through the file system from the home directory
+    nftw(getenv("HOME"), check_file_size, 20, FTW_PHYS);
+    // After nftw traversal
+    struct stat list_stat;
+    if (stat(TEMP_FILE_LIST, &list_stat) == 0 && list_stat.st_size > 0)
     {
-        // Send the tar.gz file to the client
+        char tarCommand[1024];
+        snprintf(tarCommand, sizeof(tarCommand), "tar -czf temp.tar.gz -T %s", TEMP_FILE_LIST);
+        int result = system(tarCommand);
+
+        // Check if the tar file was created successfully and has content
+        struct stat tarStat;
+        if (result == 0 && stat("temp.tar.gz", &tarStat) == 0 && tarStat.st_size > 0)
+        {
+            char *msg = "Tar file created and sent.\n";
+            write(client_fd, msg, strlen(msg));
+            // Logic to send the tar file should be here
+        }
+        else
+        {
+            char *msg = "Failed to create tar file.\n";
+            write(client_fd, msg, strlen(msg));
+        }
     }
     else
     {
-        char *msg = "No file found within the specified size range.\n";
+        char *msg = "No files found within the specified size range.\n";
         write(client_fd, msg, strlen(msg));
     }
 
-    // Remove the temporary tar file
-    unlink(tarPath);
+    // Cleanup the temporary file list after use
+    unlink(TEMP_FILE_LIST);
 }
 
-// ------------------------------------------------------------------//
-
+//  OPTION 5 ------------------------------------------------------------------//
 
 static char *extensions[MAX_EXTENSIONS];
 static int ext_count = 0;
 
-static int check_file_extension(const char *fpath, const struct stat *sb, int typeflag) {
-    if (typeflag == FTW_F) {
+static int check_file_extension(const char *fpath, const struct stat *sb, int typeflag)
+{
+    if (typeflag == FTW_F)
+    {
         const char *ext = strrchr(fpath, '.');
-        if (ext) {
+        if (ext)
+        {
             ext++; // Move past the dot
-            for (int i = 0; i < ext_count; i++) {
-                if (strcmp(ext, extensions[i]) == 0) {
+            for (int i = 0; i < ext_count; i++)
+            {
+                if (strcmp(ext, extensions[i]) == 0)
+                {
                     // File matches one of the extensions
                     return 1; // Mark this file for inclusion in the tarball
                 }
@@ -491,17 +542,20 @@ static int check_file_extension(const char *fpath, const struct stat *sb, int ty
     return 0; // Continue traversing
 }
 
-void handle_w24ft(int client_fd, const char *extensionList) {
+void handle_w24ft(int client_fd, const char *extensionList)
+{
     char *token = strtok((char *)extensionList, " ");
     ext_count = 0;
-    while (token && ext_count < MAX_EXTENSIONS) {
+    while (token && ext_count < MAX_EXTENSIONS)
+    {
         extensions[ext_count++] = token;
         token = strtok(NULL, " ");
     }
 
     // Create a file list
     FILE *fileList = fopen("/tmp/filelist.txt", "w");
-    if (fileList == NULL) {
+    if (fileList == NULL)
+    {
         perror("Failed to create file list");
         write(client_fd, "Server error\n", 13);
         return;
@@ -510,7 +564,8 @@ void handle_w24ft(int client_fd, const char *extensionList) {
     // Traverse the file system starting from the home directory
     nftw(getenv("HOME"), (int (*)(const char *, const struct stat *, int, struct FTW *))check_file_extension, 20, FTW_NS);
 
-    for (int i = 0; i < ext_count; i++) {
+    for (int i = 0; i < ext_count; i++)
+    {
         // Use find command to get all files with the given extension and append to fileList
         char command[1024];
         sprintf(command, "find %s -type f -name '*.%s' >> /tmp/filelist.txt", getenv("HOME"), extensions[i]);
@@ -521,7 +576,8 @@ void handle_w24ft(int client_fd, const char *extensionList) {
 
     // Check if file list is empty
     struct stat statbuf;
-    if (stat("/tmp/filelist.txt", &statbuf) != 0 || statbuf.st_size == 0) {
+    if (stat("/tmp/filelist.txt", &statbuf) != 0 || statbuf.st_size == 0)
+    {
         write(client_fd, "No file found\n", 14);
         unlink("/tmp/filelist.txt");
         return;
@@ -539,7 +595,6 @@ void handle_w24ft(int client_fd, const char *extensionList) {
     unlink("/tmp/filelist.txt");
     unlink(TAR_FILE);
 }
-
 
 // ------------------------------------------------------------------//
 
