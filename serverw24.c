@@ -32,7 +32,7 @@
 #define PORT 8080
 #define PATH_MAX 4096
 #define MAX_EXTENSIONS 3
-#define TAR_FILE "/tmp/files.tar.gz"
+#define TAR_FILE "temp.tar.gz"
 #define TAR_FILE_Date "/tmp/filtered_files.tar.gz"
 #define TEMP_FILE_LIST "filelist.txt"
 #define MAX_DIRS 10000 // Adjust based on the expected number of directories
@@ -521,20 +521,19 @@ void handle_w24fz(int client_fd, const char *sizeRange)
 static char *extensions[MAX_EXTENSIONS];
 static int ext_count = 0;
 
-static int check_file_extension(const char *fpath, const struct stat *sb, int typeflag)
-{
-    if (typeflag == FTW_F)
-    {
+static int check_file_extension(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
+    if (typeflag == FTW_F && fpath[ftwbuf->base] != '.') {
         const char *ext = strrchr(fpath, '.');
-        if (ext)
-        {
+        if (ext) {
             ext++; // Move past the dot
-            for (int i = 0; i < ext_count; i++)
-            {
-                if (strcmp(ext, extensions[i]) == 0)
-                {
-                    // File matches one of the extensions
-                    return 1; // Mark this file for inclusion in the tarball
+            for (int i = 0; i < ext_count; i++) {
+                if (strcmp(ext, extensions[i]) == 0) {
+                    FILE *fp = fopen(TEMP_FILE_LIST, "a");
+                    if (fp) {
+                        fprintf(fp, "%s\n", fpath);
+                        fclose(fp);
+                    }
+                    break;
                 }
             }
         }
@@ -542,61 +541,53 @@ static int check_file_extension(const char *fpath, const struct stat *sb, int ty
     return 0; // Continue traversing
 }
 
-void handle_w24ft(int client_fd, const char *extensionList)
-{
-    char *token = strtok((char *)extensionList, " ");
+void handle_w24ft(int client_fd, const char *extensionList) {
+    // Reset extension count for each call
     ext_count = 0;
-    while (token && ext_count < MAX_EXTENSIONS)
-    {
-        extensions[ext_count++] = token;
-        token = strtok(NULL, " ");
+
+    // Parse the extension list and count the extensions
+    char *token = strtok((char *)extensionList, " ");
+    while (token) {
+        if (ext_count < MAX_EXTENSIONS) {
+            extensions[ext_count++] = token;
+            token = strtok(NULL, " ");
+        } else {
+            write(client_fd, "Too many file types specified. Max 3 allowed.\n", 45);
+            return;
+        }
     }
 
-    // Create a file list
-    FILE *fileList = fopen("/tmp/filelist.txt", "w");
-    if (fileList == NULL)
-    {
-        perror("Failed to create file list");
-        write(client_fd, "Server error\n", 13);
+    if (ext_count == 0) {
+        write(client_fd, "No file types specified.\n", 26);
         return;
     }
 
-    // Traverse the file system starting from the home directory
-    nftw(getenv("HOME"), (int (*)(const char *, const struct stat *, int, struct FTW *))check_file_extension, 20, FTW_NS);
+    // Clear the temporary file list
+    fclose(fopen(TEMP_FILE_LIST, "w"));
 
-    for (int i = 0; i < ext_count; i++)
-    {
-        // Use find command to get all files with the given extension and append to fileList
-        char command[1024];
-        sprintf(command, "find %s -type f -name '*.%s' >> /tmp/filelist.txt", getenv("HOME"), extensions[i]);
-        system(command);
-    }
+    nftw(getenv("HOME"), check_file_extension, 20, FTW_PHYS);
 
-    fclose(fileList);
-
-    // Check if file list is empty
     struct stat statbuf;
-    if (stat("/tmp/filelist.txt", &statbuf) != 0 || statbuf.st_size == 0)
-    {
-        write(client_fd, "No file found\n", 14);
-        unlink("/tmp/filelist.txt");
-        return;
+    if (stat(TEMP_FILE_LIST, &statbuf) == 0 && statbuf.st_size > 0) {
+        char tarCommand[256];
+        snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s", TAR_FILE, TEMP_FILE_LIST);
+        if (system(tarCommand) == 0) {
+            char *msg = "Tar file created.\n";
+            write(client_fd, msg, strlen(msg));
+            // Code to send the file to the client goes here
+        } else {
+            char *msg = "Failed to create tar file.\n";
+            write(client_fd, msg, strlen(msg));
+        }
+    } else {
+        write(client_fd, "No file found matching specified types.\n", 41);
     }
 
-    // Create a tar file from the list of found files
-    char tarCommand[256];
-    sprintf(tarCommand, "tar -czf %s -T /tmp/filelist.txt", TAR_FILE);
-    system(tarCommand);
-
-    // Send the tar.gz file to the client
-    // Your code to send the file goes here
-
-    // Cleanup
-    unlink("/tmp/filelist.txt");
-    unlink(TAR_FILE);
+    unlink(TEMP_FILE_LIST); // Cleanup
 }
 
-// ------------------------------------------------------------------//
+
+//  OPTION 6 ------------------------------------------------------------------//
 
 static time_t target_date;
 static int file_date_filter_db(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
