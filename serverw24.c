@@ -1,4 +1,16 @@
 // serverw24.c
+#define _GNU_SOURCE
+#include <fcntl.h>           // Definition of AT_* constants
+#include <unistd.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/stat.h>
+#include <sys/stat.h>
+
+#if !defined(STATX_BTIME)
+#define STATX_BTIME 0x00000800U
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,7 +26,8 @@
 #include <libgen.h>
 #include <limits.h>
 #include <tar.h>
-
+#include <fcntl.h>
+#include <sys/syscall.h>
 
 #define PORT 8080
 #define PATH_MAX 4096
@@ -233,53 +246,85 @@ void handle_dirlist_a(int client_fd)
 
 // ------------------------------------------------------------------//
 
-int dir_time_compare(const void *a, const void *b)
-{
-    struct stat stat1, stat2;
-    stat(*(const char **)a, &stat1);
-    stat(*(const char **)b, &stat2);
-    return stat1.st_mtime - stat2.st_mtime; // Compare modification times
+
+
+
+
+typedef struct {
+    char *full_path;
+    char *dir_name;
+    struct timespec btime;  // Adjusted for timespec
+} DirEntry;
+
+int dir_time_compare(const void *a, const void *b) {
+    const DirEntry *dir1 = (const DirEntry *)a;
+    const DirEntry *dir2 = (const DirEntry *)b;
+    if (dir1->btime.tv_sec < dir2->btime.tv_sec) return -1;
+    if (dir1->btime.tv_sec > dir2->btime.tv_sec) return 1;
+    if (dir1->btime.tv_nsec < dir2->btime.tv_nsec) return -1;
+    if (dir1->btime.tv_nsec > dir2->btime.tv_nsec) return 1;
+    return 0;
 }
 
-void handle_dirlist_t(int client_fd)
-{
-    DIR *d;
-    struct dirent *dir;
-    char *dirList[1024]; // Assuming we won't have more than 1024 directories
-    int count = 0;
+void list_subdirectories_recursive_t(const char *base_path, DirEntry dirList[], int *count, int max_count) {
+    DIR *d = opendir(base_path);
+    if (!d) {
+        return;
+    }
 
-    d = opendir(".");
-    if (d)
-    {
-        while ((dir = readdir(d)) != NULL)
-        {
-            if (dir->d_type == DT_DIR && strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0)
-            {
-                dirList[count++] = strdup(dir->d_name);
+    struct dirent *dir;
+    struct statx statbuf;
+    char path[1024];
+    while ((*count < max_count) && (dir = readdir(d)) != NULL) {
+        if (dir->d_type == DT_DIR && dir->d_name[0] != '.') {
+            if (strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0) {
+                snprintf(path, sizeof(path), "%s/%s", base_path, dir->d_name);
+                if (syscall(SYS_statx, AT_FDCWD, path, AT_SYMLINK_NOFOLLOW, STATX_BTIME, &statbuf) == 0) {
+                    dirList[*count].full_path = strdup(path);
+                    dirList[*count].dir_name = strdup(dir->d_name);
+                    // Assigning the fields individually
+                    dirList[*count].btime.tv_sec = statbuf.stx_btime.tv_sec;
+                    dirList[*count].btime.tv_nsec = statbuf.stx_btime.tv_nsec;
+                    (*count)++;
+                }
+
+                list_subdirectories_recursive_t(path, dirList, count, max_count);
             }
         }
-        closedir(d);
-
-        // Sort the directory list based on modification time
-        qsort(dirList, count, sizeof(char *), dir_time_compare);
-
-        char response[8192] = "";
-        for (int i = 0; i < count; i++)
-        {
-            strcat(response, dirList[i]);
-            strcat(response, "\n");
-            free(dirList[i]);
-        }
-        write(client_fd, response, strlen(response));
-        printf("Directory list sent to client\n");
-        printf(strlen(response));
     }
-    else
-    {
-        char *errorMsg = "Failed to open directory.";
-        write(client_fd, errorMsg, strlen(errorMsg));
+    closedir(d);
+}
+
+void handle_dirlist_t(int client_fd) {
+    DirEntry dirList[MAX_DIRS]; // Assuming MAX_DIRS is defined and large enough
+    int count = 0;
+
+    char *home_dir = getenv("HOME");
+    if (!home_dir) {
+        home_dir = "/";
+    }
+
+    list_subdirectories_recursive_t(home_dir, dirList, &count, MAX_DIRS);
+    qsort(dirList, count, sizeof(DirEntry), dir_time_compare);
+
+    char response[65536] = ""; // Ensure the buffer is large enough
+    for (int i = 0; i < count; i++) {
+        strcat(response, dirList[i].dir_name);
+        strcat(response, "\n");
+        printf("%s\n", dirList[i].dir_name); // Print only directory name on the server side
+        free(dirList[i].full_path);
+        free(dirList[i].dir_name);
+    }
+
+    write(client_fd, response, strlen(response));
+
+    if (count == 0) {
+        const char *msg = "No subdirectories found.\n";
+        write(client_fd, msg, strlen(msg));
+        printf("%s", msg); // Also print on the server side
     }
 }
+
 
 // ------------------------------------------------------------------//
 
