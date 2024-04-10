@@ -178,7 +178,7 @@ void crequest(int client_fd)
     close(client_fd); // Close the client socket at the end of the session
 }
 
-// ------------------------------------------------------------------//
+//  OPTION 1 ------------------------------------------------------------------//
 
 int compare_strings(const void *a, const void *b)
 {
@@ -244,9 +244,7 @@ void handle_dirlist_a(int client_fd)
     write(client_fd, bigBuffer, strlen(bigBuffer));
 }
 
-// ------------------------------------------------------------------//
-
-
+// OPTION 2 ------------------------------------------------------------------//
 
 
 
@@ -326,52 +324,50 @@ void handle_dirlist_t(int client_fd) {
 }
 
 
-// ------------------------------------------------------------------//
+//  OPTION 3 ------------------------------------------------------------------//
 
-struct file_info
-{
+struct file_info {
     char path[PATH_MAX];
     off_t size;
     mode_t mode;
-    time_t mtime;
+    struct timespec btime;
 };
 
 static struct file_info found_file;
 static char target_filename[256];
 
-static int find_file_in_directory(const char *dir_path)
-{
+static int find_file_in_directory(const char *dir_path) {
     DIR *dir = opendir(dir_path);
-    if (dir == NULL)
-    {
+    if (dir == NULL) {
         return 0;
     }
 
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL)
-    {
-        if (entry->d_type == DT_REG && strcmp(target_filename, entry->d_name) == 0)
-        {
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG && strcmp(target_filename, entry->d_name) == 0) {
             // Construct the full path for the file
             snprintf(found_file.path, PATH_MAX, "%s/%s", dir_path, entry->d_name);
 
-            struct stat file_stat;
-            if (stat(found_file.path, &file_stat) == 0)
-            {
-                found_file.size = file_stat.st_size;
-                found_file.mode = file_stat.st_mode;
-                found_file.mtime = file_stat.st_mtime;
+            struct statx file_stat;
+            if (syscall(SYS_statx, AT_FDCWD, found_file.path, AT_SYMLINK_NOFOLLOW, STATX_ALL, &file_stat) == 0) {
+                found_file.size = file_stat.stx_size;
+                found_file.mode = file_stat.stx_mode;
+                found_file.btime.tv_sec = file_stat.stx_btime.tv_sec;
+                found_file.btime.tv_nsec = file_stat.stx_btime.tv_nsec;
                 closedir(dir);
                 return 1; // File found
             }
         }
-        else if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
-        {
+    }
+
+    // Only search in subdirectories if the file wasn't found in the current directory
+    rewinddir(dir);  // Reset directory stream to the beginning
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
             char next_dir_path[PATH_MAX];
             snprintf(next_dir_path, PATH_MAX, "%s/%s", dir_path, entry->d_name);
 
-            if (find_file_in_directory(next_dir_path))
-            {
+            if (find_file_in_directory(next_dir_path)) {
                 closedir(dir);
                 return 1; // File found in sub-directory
             }
@@ -382,33 +378,33 @@ static int find_file_in_directory(const char *dir_path)
     return 0; // File not found
 }
 
-void handle_w24fn(int client_fd, const char *filename)
-{
-    memset(&found_file, 0, sizeof(found_file));
-    strncpy(target_filename, filename, sizeof(target_filename) - 1);
-
-    char *home_dir = getenv("HOME"); // Get the home directory path
-    if (!home_dir)
-    {
-        home_dir = "/"; // Fallback to root if HOME is not set
+void handle_w24fn(int client_fd, const char *filename) {
+    strcpy(target_filename, filename);
+    char *home_dir = getenv("HOME");
+    if (!home_dir) {
+        home_dir = "/";
     }
 
-    if (find_file_in_directory(home_dir))
-    {
-        char file_info[1024] = {0}; // Initialize buffer to zero
-        sprintf(file_info, "File: %s, Size: %lld, Permissions: %o, Last Modified: %s",
-                found_file.path, (long long)found_file.size, found_file.mode & 0777,
-                ctime(&found_file.mtime));
-        write(client_fd, file_info, strlen(file_info));
-    }
-    else
-    {
-        char msg[1024] = "File not found\n"; // Initialize message buffer
+    if (find_file_in_directory(home_dir)) {
+        char response[1024];
+        char time_str[256];
+
+        // Convert the birth time to human-readable format
+        struct tm *tm_info = localtime(&found_file.btime.tv_sec);
+        strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
+
+        snprintf(response, sizeof(response), "File: %s, Size: %ld bytes, Created: %s, Permissions: %o\n",
+                 found_file.path, found_file.size, time_str, found_file.mode & 0777);  // Mask mode to display standard Unix permissions
+
+        write(client_fd, response, strlen(response));
+    } else {
+        const char *msg = "File not found\n";
         write(client_fd, msg, strlen(msg));
     }
 }
 
-// ------------------------------------------------------------------//
+
+//  OPTION 4  ------------------------------------------------------------------//
 
 struct size_filter
 {
