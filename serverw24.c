@@ -4,8 +4,6 @@
 #include <unistd.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <sys/stat.h>
-#include <sys/stat.h>
 
 #if !defined(STATX_BTIME)
 #define STATX_BTIME 0x00000800U
@@ -29,6 +27,7 @@
 #include <fcntl.h>
 #include <sys/syscall.h>
 
+
 #define PORT 8080
 #define PATH_MAX 4096
 #define MAX_EXTENSIONS 3
@@ -36,6 +35,9 @@
 #define TAR_FILE_Date "/tmp/filtered_files.tar.gz"
 #define TEMP_FILE_LIST "filelist.txt"
 #define MAX_DIRS 10000 // Adjust based on the expected number of directories
+// Global variable to hold the threshold date as time_t
+static time_t global_threshold_time;
+
 
 void crequest(int client_fd);
 void handle_dirlist_a(int client_fd);
@@ -589,88 +591,131 @@ void handle_w24ft(int client_fd, const char *extensionList) {
 
 //  OPTION 6 ------------------------------------------------------------------//
 
-static time_t target_date;
-static int file_date_filter_db(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
-{
-    if (typeflag == FTW_F)
-    {
-        if (difftime(sb->st_mtime, target_date) <= 0)
-        { // Check if the file modification time is less than or equal to target date
-            char cmd[1024];
-            snprintf(cmd, sizeof(cmd), "tar -rf %s \"%s\"", TAR_FILE_Date, fpath);
-            system(cmd); // Append the file to the tar archive
-        }
+
+// Utility function to convert date string to time_t
+time_t parse_date_db(const char *date_str) {
+    struct tm tm = {0};
+    if (strptime(date_str, "%Y-%m-%d", &tm) == NULL) {
+        return -1; // Parsing error
     }
-    return 0; // Continue traversing
+    return mktime(&tm);
 }
 
-void handle_w24fdb(int client_fd, const char *dateStr)
-{
-    struct tm tm;
-    memset(&tm, 0, sizeof(struct tm));
-    strptime(dateStr, "%Y-%m-%d", &tm);
-    target_date = mktime(&tm);
-
-    // Initialize the tar file
-    system("tar -cf " TAR_FILE_Date " --files-from /dev/null");
-
-    nftw("~", file_date_filter_db, 20, FTW_NS);
-
-    // Check if the tar file has any content
-    struct stat tar_stat;
-    if (stat(TAR_FILE_Date, &tar_stat) == 0 && tar_stat.st_size > 0)
-    {
-        // Logic to send the tar.gz file to the client
+// File check callback for nftw
+static int check_file_date_db(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
+    // Only include regular files and check against the global threshold time
+    if (typeflag == FTW_F && sb->st_ctime <= global_threshold_time) {
+        FILE *fp = fopen(TEMP_FILE_LIST, "a");
+        if (fp) {
+            fprintf(fp, "%s\n", fpath);
+            fclose(fp);
+        }
     }
-    else
-    {
-        char *msg = "No file found before the specified date.\n";
+    return 0; // Continue traversal
+}
+
+
+// Global variable to hold the threshold date as time_t
+static time_t global_threshold_time;
+
+void handle_w24fdb(int client_fd, const char *dateStr) {
+    global_threshold_time = parse_date_db(dateStr);
+    if (global_threshold_time == -1) {
+        const char *msg = "Invalid date format.\n";
+        write(client_fd, msg, strlen(msg));
+        return;
+    }
+
+    // Clear the temporary file list
+    fclose(fopen(TEMP_FILE_LIST, "w"));
+
+    // Walk through the file system from the home directory
+    nftw(getenv("HOME"), check_file_date_db, 20, FTW_PHYS);
+
+    // Prepare to create a tar.gz file from the list of found files
+    char tarCommand[1024];
+    snprintf(tarCommand, sizeof(tarCommand), "tar -czf temp.tar.gz -T %s", TEMP_FILE_LIST);
+    if (system(tarCommand) == 0) {
+        struct stat tarStat;
+        if (stat("temp.tar.gz", &tarStat) == 0 && tarStat.st_size > 0) {
+            char *msg = "Tar file created and sent.\n";
+            write(client_fd, msg, strlen(msg));
+            // Here should be the logic to actually send the file to the client
+        } else {
+            char *msg = "No files found with specified date.\n";
+            write(client_fd, msg, strlen(msg));
+        }
+    } else {
+        char *msg = "Failed to create tar file.\n";
         write(client_fd, msg, strlen(msg));
     }
 
-    unlink(TAR_FILE_Date); // Remove the temporary tar file
+    // Cleanup
+    unlink(TEMP_FILE_LIST);
 }
+
+
 
 // ------------------------------------------------------------------//
 
-static time_t target_date;
-static int file_date_filter_da(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
-{
-    if (typeflag == FTW_F)
-    {
-        if (difftime(sb->st_mtime, target_date) >= 0)
-        { // Check if the file modification time is greater than or equal to target date
-            char cmd[1024];
-            snprintf(cmd, sizeof(cmd), "tar -rf %s \"%s\"", TAR_FILE_Date, fpath);
-            system(cmd); // Append the file to the tar archive
-        }
+// Utility function to convert date string to time_t
+time_t parse_date_da(const char *date_str) {
+    struct tm tm = {0};
+    if (strptime(date_str, "%Y-%m-%d", &tm) == NULL) {
+        return -1; // Parsing error
     }
-    return 0; // Continue traversing
+    return mktime(&tm);
 }
 
-void handle_w24fda(int client_fd, const char *dateStr)
-{
-    struct tm tm;
-    memset(&tm, 0, sizeof(struct tm));
-    strptime(dateStr, "%Y-%m-%d", &tm);
-    target_date = mktime(&tm);
-
-    // Initialize the tar file
-    system("tar -cf " TAR_FILE_Date " --files-from /dev/null");
-
-    nftw("~", file_date_filter_da, 20, FTW_NS);
-
-    // Check if the tar file has any content
-    struct stat tar_stat;
-    if (stat(TAR_FILE_Date, &tar_stat) == 0 && tar_stat.st_size > 0)
-    {
-        // Logic to send the tar.gz file to the client
+// File check callback for nftw
+static int check_file_date_da(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
+    // Only include regular files and check against the global threshold time
+    if (typeflag == FTW_F && sb->st_ctime >= global_threshold_time) {
+        FILE *fp = fopen(TEMP_FILE_LIST, "a");
+        if (fp) {
+            fprintf(fp, "%s\n", fpath);
+            fclose(fp);
+        }
     }
-    else
-    {
-        char *msg = "No file found after the specified date.\n";
+    return 0; // Continue traversal
+}
+
+
+// Global variable to hold the threshold date as time_t
+static time_t global_threshold_time;
+
+void handle_w24fda(int client_fd, const char *dateStr) {
+    global_threshold_time = parse_date_da(dateStr);
+    if (global_threshold_time == -1) {
+        const char *msg = "Invalid date format.\n";
+        write(client_fd, msg, strlen(msg));
+        return;
+    }
+
+    // Clear the temporary file list
+    fclose(fopen(TEMP_FILE_LIST, "w"));
+
+    // Walk through the file system from the home directory
+    nftw(getenv("HOME"), check_file_date_da, 20, FTW_PHYS);
+
+    // Prepare to create a tar.gz file from the list of found files
+    char tarCommand[1024];
+    snprintf(tarCommand, sizeof(tarCommand), "tar -czf temp.tar.gz -T %s", TEMP_FILE_LIST);
+    if (system(tarCommand) == 0) {
+        struct stat tarStat;
+        if (stat("temp.tar.gz", &tarStat) == 0 && tarStat.st_size > 0) {
+            char *msg = "Tar file created and sent.\n";
+            write(client_fd, msg, strlen(msg));
+            // Here should be the logic to actually send the file to the client
+        } else {
+            char *msg = "No files found with specified date.\n";
+            write(client_fd, msg, strlen(msg));
+        }
+    } else {
+        char *msg = "Failed to create tar file.\n";
         write(client_fd, msg, strlen(msg));
     }
 
-    unlink(TAR_FILE_Date); // Remove the temporary tar file
+    // Cleanup
+    unlink(TEMP_FILE_LIST);
 }
