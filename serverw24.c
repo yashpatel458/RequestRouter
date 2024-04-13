@@ -31,7 +31,7 @@
 #define PORT 8080
 #define PATH_MAX 4096
 #define MAX_EXTENSIONS 3
-#define TAR_FILE "temp.tar.gz"
+#define TAR_FILE "/w24project/temp.tar.gz"
 #define TAR_FILE_Date "/tmp/filtered_files.tar.gz"
 #define TEMP_FILE_LIST "filelist.txt"
 #define MAX_DIRS 10000 // Adjust based on the expected number of directories
@@ -47,6 +47,16 @@ void handle_w24fz(int client_fd, const char *sizeRange);
 void handle_w24ft(int client_fd, const char *extensions);
 void handle_w24fdb(int client_fd, const char *date);
 void handle_w24fda(int client_fd, const char *date);
+
+void ensure_directory_exists() {
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/w24project", getenv("HOME"));
+    struct stat st = {0};
+
+    if (stat(path, &st) == -1) {
+        mkdir(path, 0700); // Adjust permissions as necessary
+    }
+}
 
 int main()
 {
@@ -76,12 +86,13 @@ int main()
     ARG3 // sizeof(address) - size of the address structure
     */
 
-    listen(server_fd, 3); // server listens for incoming client connections
+    listen(server_fd, 100); // server listens for incoming client connections
 
     /*
     ARG1 // server_fd - socket descriptor
     ARG2 // 3 - maximum number of client connections that can be queued
     */
+   ensure_directory_exists();
 
     while (1)
     {
@@ -179,6 +190,7 @@ void crequest(int client_fd)
     }
     close(client_fd); // Close the client socket at the end of the session
 }
+
 
 //  OPTION 1 ------------------------------------------------------------------//
 
@@ -465,14 +477,12 @@ static int check_file_size(const char *fpath, const struct stat *sb, int typefla
     return 0; // Continue traversing
 }
 
-void handle_w24fz(int client_fd, const char *sizeRange)
-{
+void handle_w24fz(int client_fd, const char *sizeRange) {
     long size1, size2;
     sscanf(sizeRange, "%ld %ld", &size1, &size2);
 
     // Validate the size range
-    if (size1 > size2 || size1 < 0 || size2 < 0)
-    {
+    if (size1 > size2 || size1 < 0 || size2 < 0) {
         char *msg = "Invalid size range.\n";
         write(client_fd, msg, strlen(msg));
         return;
@@ -486,30 +496,28 @@ void handle_w24fz(int client_fd, const char *sizeRange)
 
     // Use nftw to walk through the file system from the home directory
     nftw(getenv("HOME"), check_file_size, 20, FTW_PHYS);
-    // After nftw traversal
+
+    // Check if there are any files found
     struct stat list_stat;
-    if (stat(TEMP_FILE_LIST, &list_stat) == 0 && list_stat.st_size > 0)
-    {
+    if (stat(TEMP_FILE_LIST, &list_stat) == 0 && list_stat.st_size > 0) {
+        char tarFilePath[1024];
+        snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
         char tarCommand[1024];
-        snprintf(tarCommand, sizeof(tarCommand), "tar -czf temp.tar.gz -T %s", TEMP_FILE_LIST);
+        snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
+
         int result = system(tarCommand);
 
         // Check if the tar file was created successfully and has content
         struct stat tarStat;
-        if (result == 0 && stat("temp.tar.gz", &tarStat) == 0 && tarStat.st_size > 0)
-        {
+        if (result == 0 && stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0) {
             char *msg = "Tar file created and sent.\n";
             write(client_fd, msg, strlen(msg));
             // Logic to send the tar file should be here
-        }
-        else
-        {
+        } else {
             char *msg = "Failed to create tar file.\n";
             write(client_fd, msg, strlen(msg));
         }
-    }
-    else
-    {
+    } else {
         char *msg = "No files found within the specified size range.\n";
         write(client_fd, msg, strlen(msg));
     }
@@ -517,6 +525,7 @@ void handle_w24fz(int client_fd, const char *sizeRange)
     // Cleanup the temporary file list after use
     unlink(TEMP_FILE_LIST);
 }
+
 
 //  OPTION 5 ------------------------------------------------------------------//
 
@@ -571,8 +580,11 @@ void handle_w24ft(int client_fd, const char *extensionList) {
 
     struct stat statbuf;
     if (stat(TEMP_FILE_LIST, &statbuf) == 0 && statbuf.st_size > 0) {
-        char tarCommand[256];
-        snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s", TAR_FILE, TEMP_FILE_LIST);
+        char tarFilePath[1024];
+        snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
+        char tarCommand[1024];
+        snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
+
         if (system(tarCommand) == 0) {
             char *msg = "Tar file created.\n";
             write(client_fd, msg, strlen(msg));
@@ -585,8 +597,10 @@ void handle_w24ft(int client_fd, const char *extensionList) {
         write(client_fd, "No file found matching specified types.\n", 41);
     }
 
-    unlink(TEMP_FILE_LIST); // Cleanup
+    // Cleanup the temporary file list after use
+    unlink(TEMP_FILE_LIST);
 }
+
 
 
 //  OPTION 6 ------------------------------------------------------------------//
@@ -621,7 +635,7 @@ static time_t global_threshold_time;
 void handle_w24fdb(int client_fd, const char *dateStr) {
     global_threshold_time = parse_date_db(dateStr);
     if (global_threshold_time == -1) {
-        const char *msg = "Invalid date format.\n";
+        const char *msg = "Invalid date format. Accepted format is (YYYY-MM-DD)\n";
         write(client_fd, msg, strlen(msg));
         return;
     }
@@ -633,11 +647,13 @@ void handle_w24fdb(int client_fd, const char *dateStr) {
     nftw(getenv("HOME"), check_file_date_db, 20, FTW_PHYS);
 
     // Prepare to create a tar.gz file from the list of found files
+    char tarFilePath[1024];
+    snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
     char tarCommand[1024];
-    snprintf(tarCommand, sizeof(tarCommand), "tar -czf temp.tar.gz -T %s", TEMP_FILE_LIST);
+    snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
     if (system(tarCommand) == 0) {
         struct stat tarStat;
-        if (stat("temp.tar.gz", &tarStat) == 0 && tarStat.st_size > 0) {
+        if (stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0) {
             char *msg = "Tar file created and sent.\n";
             write(client_fd, msg, strlen(msg));
             // Here should be the logic to actually send the file to the client
@@ -653,6 +669,7 @@ void handle_w24fdb(int client_fd, const char *dateStr) {
     // Cleanup
     unlink(TEMP_FILE_LIST);
 }
+
 
 
 
@@ -687,7 +704,7 @@ static time_t global_threshold_time;
 void handle_w24fda(int client_fd, const char *dateStr) {
     global_threshold_time = parse_date_da(dateStr);
     if (global_threshold_time == -1) {
-        const char *msg = "Invalid date format.\n";
+        const char *msg = "Invalid date format. Accepted format is (YYYY-MM-DD)\n";
         write(client_fd, msg, strlen(msg));
         return;
     }
@@ -699,11 +716,13 @@ void handle_w24fda(int client_fd, const char *dateStr) {
     nftw(getenv("HOME"), check_file_date_da, 20, FTW_PHYS);
 
     // Prepare to create a tar.gz file from the list of found files
+    char tarFilePath[1024];
+    snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
     char tarCommand[1024];
-    snprintf(tarCommand, sizeof(tarCommand), "tar -czf temp.tar.gz -T %s", TEMP_FILE_LIST);
+    snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
     if (system(tarCommand) == 0) {
         struct stat tarStat;
-        if (stat("temp.tar.gz", &tarStat) == 0 && tarStat.st_size > 0) {
+        if (stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0) {
             char *msg = "Tar file created and sent.\n";
             write(client_fd, msg, strlen(msg));
             // Here should be the logic to actually send the file to the client
