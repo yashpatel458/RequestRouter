@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <signal.h>  // Include for signal handling
 
 #if !defined(STATX_BTIME)
 #define STATX_BTIME 0x00000800U
@@ -24,20 +25,25 @@
 #include <libgen.h>
 #include <limits.h>
 #include <tar.h>
-#include <fcntl.h>
 #include <sys/syscall.h>
-
+#include <arpa/inet.h> // For inet_addr and htons
 
 #define PORT 8080
+#define MIRROR1_IP "127.0.0.1" // Change to your actual mirror1 IP address
+#define MIRROR1_PORT 8081
+
+#define MIRROR2_IP "127.0.0.1" // Change to your actual mirror2 IP address
+#define MIRROR2_PORT 8082
+
 #define PATH_MAX 4096
 #define MAX_EXTENSIONS 3
 #define TAR_FILE "/w24project/temp.tar.gz"
 #define TAR_FILE_Date "/tmp/filtered_files.tar.gz"
 #define TEMP_FILE_LIST "filelist.txt"
 #define MAX_DIRS 10000 // Adjust based on the expected number of directories
+#define CONNECTION_COUNTER_FILE "connection_count.txt"
 // Global variable to hold the threshold date as time_t
 static time_t global_threshold_time;
-
 
 void crequest(int client_fd);
 void handle_dirlist_a(int client_fd);
@@ -48,25 +54,116 @@ void handle_w24ft(int client_fd, const char *extensions);
 void handle_w24fdb(int client_fd, const char *date);
 void handle_w24fda(int client_fd, const char *date);
 
-void ensure_directory_exists() {
+void ensure_directory_exists()
+{
     char path[1024];
     snprintf(path, sizeof(path), "%s/w24project", getenv("HOME"));
     struct stat st = {0};
 
-    if (stat(path, &st) == -1) {
+    if (stat(path, &st) == -1)
+    {
         mkdir(path, 0700); // Adjust permissions as necessary
     }
 }
 
+void reset_connection_count() {
+    FILE *file = fopen(CONNECTION_COUNTER_FILE, "w");
+    if (file) {
+        fprintf(file, "0");  // Reset the counter to zero
+        fclose(file);
+    } else {
+        perror("Failed to open connection counter file");
+    }
+}
+
+// Function to read the current connection count
+int read_connection_count()
+{
+    FILE *file = fopen(CONNECTION_COUNTER_FILE, "r");
+    int count = 0;
+    if (file)
+    {
+        fscanf(file, "%d", &count);
+        fclose(file);
+    }
+    return count;
+}
+
+// Function to increment and save the connection count
+void increment_connection_count()
+{
+    int count = read_connection_count();
+    FILE *file = fopen(CONNECTION_COUNTER_FILE, "w");
+    if (file)
+    {
+        fprintf(file, "%d", count + 1);
+        fclose(file);
+    }
+}
+
+// Function to determine which server to use
+int determine_server(int count)
+{
+    // Adjust the modulus and conditions based on your specific rotation needs
+    if (count <= 3)
+        return 1; // serverw24
+    else if (count <= 6)
+        return 2; // mirror1
+    else if (count <= 9)
+        return 3; // mirror2
+    else
+        return ((count - 1) % 3) + 1; // Rotate among all three servers
+}
+
+
+void redirect_to_mirror(int original_client_fd, const char *ip, int port)
+{
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in mirror_addr;
+
+    mirror_addr.sin_family = AF_INET;
+    mirror_addr.sin_port = htons(port);
+    mirror_addr.sin_addr.s_addr = inet_addr(ip);
+
+    if (connect(sock, (struct sockaddr *)&mirror_addr, sizeof(mirror_addr)) < 0)
+    {
+        perror("Connect failed");
+        return;
+    }
+
+    // Forward the original client's request to the mirror
+    char buffer[1024];
+    int bytes_read = read(original_client_fd, buffer, sizeof(buffer));
+    if (bytes_read > 0)
+    {
+        send(sock, buffer, bytes_read, 0);
+
+        // Wait for the response from the mirror and send it back to the original client
+        bytes_read = read(sock, buffer, sizeof(buffer));
+        if (bytes_read > 0)
+        {
+            send(original_client_fd, buffer, bytes_read, 0);
+        }
+    }
+
+    close(sock); // Close the connection to the mirror
+}
+
 int main()
 {
+    reset_connection_count();
     int server_fd, client_fd;
     struct sockaddr_in address;
     int opt = 1;
     int addrlen = sizeof(address);
 
-    server_fd = socket(AF_INET, SOCK_STREAM, 0); // socket() - creates a listening socket
+    signal(SIGCHLD, SIG_IGN); // Prevent zombie processes
 
+    server_fd = socket(AF_INET, SOCK_STREAM, 0); // socket() - creates a listening socket
+    if (server_fd < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
     /*
     ARG1 // AF_INET - Address family for IPv4
     ARG2 // SOCK_STREAM - Type of socket (TCP) // SOCK_DGRAM - Type of socket (UDP)
@@ -92,7 +189,6 @@ int main()
     ARG1 // server_fd - socket descriptor
     ARG2 // 3 - maximum number of client connections that can be queued
     */
-   ensure_directory_exists();
 
     while (1)
     {
@@ -110,28 +206,41 @@ int main()
             continue;
         }
 
-        pid_t pid = fork();
-        if (pid == 0)
+        increment_connection_count();
+     
+       // Example server_id check, assuming current server is serverw24 and has ID 1
+
+        int current_connection = read_connection_count();
+        int server_to_handle = determine_server(current_connection);
+
+        if (server_to_handle == 1)
         {
-            // Child process
-            close(server_fd);
-            crequest(client_fd);
+            // Handle connection here if serverw24 should handle it
+            printf("Server selected for connection %d\n", current_connection);
+            pid_t pid = fork();
+            if (pid == 0)
+            { // Child process
+                close(server_fd);
+                crequest(client_fd);
+                close(client_fd);
+                exit(0);
+            }
+            close(client_fd); // Parent closes the client socket
+        }
+        else if (server_to_handle == 2)
+        {
+            // Redirect to mirror1
+            printf("Mirror 1 selected for connection %d\n", current_connection);
+            redirect_to_mirror(client_fd, MIRROR1_IP, MIRROR1_PORT);
             close(client_fd);
-            exit(0);
         }
-        else if (pid > 0)
+        else if (server_to_handle == 3)
         {
-            // Parent process
+            // Redirect to mirror2
+            printf("Mirror 2 selected for connection %d\n", current_connection);
+            redirect_to_mirror(client_fd, MIRROR2_IP, MIRROR2_PORT);
             close(client_fd);
-            while (waitpid(-1, NULL, WNOHANG) > 0)
-                ; // Clean up completed child processes
         }
-        else
-        {
-            // Fork failed
-            perror("fork");
-        }
-        close(client_fd);
     }
 
     return 0;
@@ -190,7 +299,6 @@ void crequest(int client_fd)
     }
     close(client_fd); // Close the client socket at the end of the session
 }
-
 
 //  OPTION 1 ------------------------------------------------------------------//
 
@@ -477,12 +585,14 @@ static int check_file_size(const char *fpath, const struct stat *sb, int typefla
     return 0; // Continue traversing
 }
 
-void handle_w24fz(int client_fd, const char *sizeRange) {
+void handle_w24fz(int client_fd, const char *sizeRange)
+{
     long size1, size2;
     sscanf(sizeRange, "%ld %ld", &size1, &size2);
 
     // Validate the size range
-    if (size1 > size2 || size1 < 0 || size2 < 0) {
+    if (size1 > size2 || size1 < 0 || size2 < 0)
+    {
         char *msg = "Invalid size range.\n";
         write(client_fd, msg, strlen(msg));
         return;
@@ -499,7 +609,8 @@ void handle_w24fz(int client_fd, const char *sizeRange) {
 
     // Check if there are any files found
     struct stat list_stat;
-    if (stat(TEMP_FILE_LIST, &list_stat) == 0 && list_stat.st_size > 0) {
+    if (stat(TEMP_FILE_LIST, &list_stat) == 0 && list_stat.st_size > 0)
+    {
         char tarFilePath[1024];
         snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
         char tarCommand[1024];
@@ -509,15 +620,20 @@ void handle_w24fz(int client_fd, const char *sizeRange) {
 
         // Check if the tar file was created successfully and has content
         struct stat tarStat;
-        if (result == 0 && stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0) {
+        if (result == 0 && stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0)
+        {
             char *msg = "Tar file created and sent.\n";
             write(client_fd, msg, strlen(msg));
             // Logic to send the tar file should be here
-        } else {
+        }
+        else
+        {
             char *msg = "Failed to create tar file.\n";
             write(client_fd, msg, strlen(msg));
         }
-    } else {
+    }
+    else
+    {
         char *msg = "No files found within the specified size range.\n";
         write(client_fd, msg, strlen(msg));
     }
@@ -526,21 +642,26 @@ void handle_w24fz(int client_fd, const char *sizeRange) {
     unlink(TEMP_FILE_LIST);
 }
 
-
 //  OPTION 5 ------------------------------------------------------------------//
 
 static char *extensions[MAX_EXTENSIONS];
 static int ext_count = 0;
 
-static int check_file_extension(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
-    if (typeflag == FTW_F && fpath[ftwbuf->base] != '.') {
+static int check_file_extension(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
+{
+    if (typeflag == FTW_F && fpath[ftwbuf->base] != '.')
+    {
         const char *ext = strrchr(fpath, '.');
-        if (ext) {
+        if (ext)
+        {
             ext++; // Move past the dot
-            for (int i = 0; i < ext_count; i++) {
-                if (strcmp(ext, extensions[i]) == 0) {
+            for (int i = 0; i < ext_count; i++)
+            {
+                if (strcmp(ext, extensions[i]) == 0)
+                {
                     FILE *fp = fopen(TEMP_FILE_LIST, "a");
-                    if (fp) {
+                    if (fp)
+                    {
                         fprintf(fp, "%s\n", fpath);
                         fclose(fp);
                     }
@@ -552,23 +673,29 @@ static int check_file_extension(const char *fpath, const struct stat *sb, int ty
     return 0; // Continue traversing
 }
 
-void handle_w24ft(int client_fd, const char *extensionList) {
+void handle_w24ft(int client_fd, const char *extensionList)
+{
     // Reset extension count for each call
     ext_count = 0;
 
     // Parse the extension list and count the extensions
     char *token = strtok((char *)extensionList, " ");
-    while (token) {
-        if (ext_count < MAX_EXTENSIONS) {
+    while (token)
+    {
+        if (ext_count < MAX_EXTENSIONS)
+        {
             extensions[ext_count++] = token;
             token = strtok(NULL, " ");
-        } else {
+        }
+        else
+        {
             write(client_fd, "Too many file types specified. Max 3 allowed.\n", 45);
             return;
         }
     }
 
-    if (ext_count == 0) {
+    if (ext_count == 0)
+    {
         write(client_fd, "No file types specified.\n", 26);
         return;
     }
@@ -579,21 +706,27 @@ void handle_w24ft(int client_fd, const char *extensionList) {
     nftw(getenv("HOME"), check_file_extension, 20, FTW_PHYS);
 
     struct stat statbuf;
-    if (stat(TEMP_FILE_LIST, &statbuf) == 0 && statbuf.st_size > 0) {
+    if (stat(TEMP_FILE_LIST, &statbuf) == 0 && statbuf.st_size > 0)
+    {
         char tarFilePath[1024];
         snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
         char tarCommand[1024];
         snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
 
-        if (system(tarCommand) == 0) {
+        if (system(tarCommand) == 0)
+        {
             char *msg = "Tar file created.\n";
             write(client_fd, msg, strlen(msg));
             // Code to send the file to the client goes here
-        } else {
+        }
+        else
+        {
             char *msg = "Failed to create tar file.\n";
             write(client_fd, msg, strlen(msg));
         }
-    } else {
+    }
+    else
+    {
         write(client_fd, "No file found matching specified types.\n", 41);
     }
 
@@ -601,26 +734,28 @@ void handle_w24ft(int client_fd, const char *extensionList) {
     unlink(TEMP_FILE_LIST);
 }
 
-
-
 //  OPTION 6 ------------------------------------------------------------------//
 
-
 // Utility function to convert date string to time_t
-time_t parse_date_db(const char *date_str) {
+time_t parse_date_db(const char *date_str)
+{
     struct tm tm = {0};
-    if (strptime(date_str, "%Y-%m-%d", &tm) == NULL) {
+    if (strptime(date_str, "%Y-%m-%d", &tm) == NULL)
+    {
         return -1; // Parsing error
     }
     return mktime(&tm);
 }
 
 // File check callback for nftw
-static int check_file_date_db(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
+static int check_file_date_db(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
+{
     // Only include regular files and check against the global threshold time
-    if (typeflag == FTW_F && sb->st_ctime <= global_threshold_time) {
+    if (typeflag == FTW_F && sb->st_ctime <= global_threshold_time)
+    {
         FILE *fp = fopen(TEMP_FILE_LIST, "a");
-        if (fp) {
+        if (fp)
+        {
             fprintf(fp, "%s\n", fpath);
             fclose(fp);
         }
@@ -628,13 +763,14 @@ static int check_file_date_db(const char *fpath, const struct stat *sb, int type
     return 0; // Continue traversal
 }
 
-
 // Global variable to hold the threshold date as time_t
 static time_t global_threshold_time;
 
-void handle_w24fdb(int client_fd, const char *dateStr) {
+void handle_w24fdb(int client_fd, const char *dateStr)
+{
     global_threshold_time = parse_date_db(dateStr);
-    if (global_threshold_time == -1) {
+    if (global_threshold_time == -1)
+    {
         const char *msg = "Invalid date format. Accepted format is (YYYY-MM-DD)\n";
         write(client_fd, msg, strlen(msg));
         return;
@@ -651,17 +787,23 @@ void handle_w24fdb(int client_fd, const char *dateStr) {
     snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
     char tarCommand[1024];
     snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
-    if (system(tarCommand) == 0) {
+    if (system(tarCommand) == 0)
+    {
         struct stat tarStat;
-        if (stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0) {
+        if (stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0)
+        {
             char *msg = "Tar file created and sent.\n";
             write(client_fd, msg, strlen(msg));
             // Here should be the logic to actually send the file to the client
-        } else {
+        }
+        else
+        {
             char *msg = "No files found with specified date.\n";
             write(client_fd, msg, strlen(msg));
         }
-    } else {
+    }
+    else
+    {
         char *msg = "Failed to create tar file.\n";
         write(client_fd, msg, strlen(msg));
     }
@@ -670,26 +812,28 @@ void handle_w24fdb(int client_fd, const char *dateStr) {
     unlink(TEMP_FILE_LIST);
 }
 
-
-
-
 // ------------------------------------------------------------------//
 
 // Utility function to convert date string to time_t
-time_t parse_date_da(const char *date_str) {
+time_t parse_date_da(const char *date_str)
+{
     struct tm tm = {0};
-    if (strptime(date_str, "%Y-%m-%d", &tm) == NULL) {
+    if (strptime(date_str, "%Y-%m-%d", &tm) == NULL)
+    {
         return -1; // Parsing error
     }
     return mktime(&tm);
 }
 
 // File check callback for nftw
-static int check_file_date_da(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf) {
+static int check_file_date_da(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
+{
     // Only include regular files and check against the global threshold time
-    if (typeflag == FTW_F && sb->st_ctime >= global_threshold_time) {
+    if (typeflag == FTW_F && sb->st_ctime >= global_threshold_time)
+    {
         FILE *fp = fopen(TEMP_FILE_LIST, "a");
-        if (fp) {
+        if (fp)
+        {
             fprintf(fp, "%s\n", fpath);
             fclose(fp);
         }
@@ -697,13 +841,14 @@ static int check_file_date_da(const char *fpath, const struct stat *sb, int type
     return 0; // Continue traversal
 }
 
-
 // Global variable to hold the threshold date as time_t
 static time_t global_threshold_time;
 
-void handle_w24fda(int client_fd, const char *dateStr) {
+void handle_w24fda(int client_fd, const char *dateStr)
+{
     global_threshold_time = parse_date_da(dateStr);
-    if (global_threshold_time == -1) {
+    if (global_threshold_time == -1)
+    {
         const char *msg = "Invalid date format. Accepted format is (YYYY-MM-DD)\n";
         write(client_fd, msg, strlen(msg));
         return;
@@ -720,17 +865,23 @@ void handle_w24fda(int client_fd, const char *dateStr) {
     snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
     char tarCommand[1024];
     snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
-    if (system(tarCommand) == 0) {
+    if (system(tarCommand) == 0)
+    {
         struct stat tarStat;
-        if (stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0) {
+        if (stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0)
+        {
             char *msg = "Tar file created and sent.\n";
             write(client_fd, msg, strlen(msg));
             // Here should be the logic to actually send the file to the client
-        } else {
+        }
+        else
+        {
             char *msg = "No files found with specified date.\n";
             write(client_fd, msg, strlen(msg));
         }
-    } else {
+    }
+    else
+    {
         char *msg = "Failed to create tar file.\n";
         write(client_fd, msg, strlen(msg));
     }
