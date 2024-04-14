@@ -16,6 +16,7 @@
 #include <limits.h>
 #include <tar.h>
 #include <sys/syscall.h> // Include for SYS_statx
+#include <signal.h>  // Include for signal handling
 
 #if !defined(STATX_BTIME)
 #define STATX_BTIME 0x00000800U
@@ -63,6 +64,8 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
+    signal(SIGCHLD, SIG_IGN); // Prevent zombie processes
+
     while (1) {
         client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
         if (client_fd < 0) {
@@ -70,34 +73,42 @@ int main() {
             continue;
         }
 
-        // Fork a child process to handle the request just like in the main server
-        if (fork() == 0) {
-            close(server_fd);
+        if (fork() == 0) { // Child process
+            close(server_fd); // Close the listening socket in the child process
             crequest(client_fd);
             close(client_fd);
             exit(0);
         }
-        close(client_fd);
+        close(client_fd); // Parent process closes the client socket
     }
 
     return 0;
 }
+
 
 // Implement the crequest function exactly as it's in the main server
 void crequest(int client_fd) {
     char buffer[1024];
 
     while (1) {
-        memset(buffer, 0, sizeof(buffer));
-        ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
+        memset(buffer, 0, sizeof(buffer)); // Clear the buffer to avoid handling stale data
+        ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1); // Read the command
+
         if (bytes_read <= 0) {
-            break;  // Read error or connection closed by client
+            if (bytes_read == 0) {
+                printf("Client disconnected\n");
+            } else {
+                perror("Read error");
+            }
+            break; // Exit loop on read error or client disconnect
         }
 
-        buffer[bytes_read] = '\0'; // Ensure string is null-terminated
-        printf("Command received: %s\n", buffer);
+        buffer[bytes_read] = '\0'; // Null-terminate the string
 
-        // Example command handlers, make sure to implement these based on your actual application logic
+        printf("Command received: %s\n", buffer);
+        fflush(stdout);  // Ensures that the command printout is flushed immediately
+
+        // Handle commands
         if (strncmp(buffer, "dirlist -a", 10) == 0) {
             handle_dirlist_a(client_fd);
         } else if (strncmp(buffer, "dirlist -t", 10) == 0) {
@@ -113,11 +124,16 @@ void crequest(int client_fd) {
         } else if (strncmp(buffer, "w24fda ", 7) == 0) {
             handle_w24fda(client_fd, buffer + 7);
         } else if (strcmp(buffer, "quitc") == 0) {
-            break; // Exit the loop and close the connection
+            printf("Quit command received, closing connection.\n");
+            break; // Close connection on quit command
+        } else {
+            printf("Command not recognized or not implemented.\n");
         }
     }
     close(client_fd); // Close the client socket at the end of the session
 }
+
+
 
 // Implement all the other handling functions as they are in the main server
 

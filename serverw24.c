@@ -234,6 +234,7 @@ int main()
             printf("Mirror 1 selected for connection %d\n", current_connection);
              fflush(stdout);  // Ensure the output is displayed immediately
             redirect_to_mirror(client_fd, MIRROR1_IP, MIRROR1_PORT);
+            
             close(client_fd);
         }
         else if (server_to_handle == 3)

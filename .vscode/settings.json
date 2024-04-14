@@ -9,7 +9,10 @@
         "stdio.h": "c",
         "unistd.h": "c",
         "tar.h": "c",
-        "dirent.h": "c"
+        "dirent.h": "c",
+        "inet.h": "c",
+        "types.h": "c",
+        "errno.h": "c"
     },
     "C_Cpp.errorSquiggles": "enabled"
 }
