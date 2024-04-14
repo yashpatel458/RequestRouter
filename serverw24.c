@@ -217,6 +217,7 @@ int main()
         {
             // Handle connection here if serverw24 should handle it
             printf("Server selected for connection %d\n", current_connection);
+            fflush(stdout);  // Ensure the output is displayed immediately
             pid_t pid = fork();
             if (pid == 0)
             { // Child process
@@ -231,6 +232,7 @@ int main()
         {
             // Redirect to mirror1
             printf("Mirror 1 selected for connection %d\n", current_connection);
+             fflush(stdout);  // Ensure the output is displayed immediately
             redirect_to_mirror(client_fd, MIRROR1_IP, MIRROR1_PORT);
             close(client_fd);
         }
@@ -238,6 +240,7 @@ int main()
         {
             // Redirect to mirror2
             printf("Mirror 2 selected for connection %d\n", current_connection);
+             fflush(stdout);  // Ensure the output is displayed immediately
             redirect_to_mirror(client_fd, MIRROR2_IP, MIRROR2_PORT);
             close(client_fd);
         }
