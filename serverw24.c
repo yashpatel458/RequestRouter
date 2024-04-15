@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <signal.h>  // Include for signal handling
+#include <signal.h> // Include for signal handling
 
 #if !defined(STATX_BTIME)
 #define STATX_BTIME 0x00000800U
@@ -66,12 +66,16 @@ void ensure_directory_exists()
     }
 }
 
-void reset_connection_count() {
+void reset_connection_count()
+{
     FILE *file = fopen(CONNECTION_COUNTER_FILE, "w");
-    if (file) {
-        fprintf(file, "0");  // Reset the counter to zero
+    if (file)
+    {
+        fprintf(file, "0"); // Reset the counter to zero
         fclose(file);
-    } else {
+    }
+    else
+    {
         perror("Failed to open connection counter file");
     }
 }
@@ -115,7 +119,6 @@ int determine_server(int count)
         return ((count - 1) % 3) + 1; // Rotate among all three servers
 }
 
-
 void redirect_to_mirror(int original_client_fd, const char *ip, int port)
 {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -132,21 +135,28 @@ void redirect_to_mirror(int original_client_fd, const char *ip, int port)
     }
 
     // Forward the original client's request to the mirror
-    char buffer[1024];
-    int bytes_read = read(original_client_fd, buffer, sizeof(buffer));
-    if (bytes_read > 0)
+    int pid = fork();
+
+    if (pid == 0)
     {
-        send(sock, buffer, bytes_read, 0);
-
-        // Wait for the response from the mirror and send it back to the original client
-        bytes_read = read(sock, buffer, sizeof(buffer));
-        if (bytes_read > 0)
+        while (1)
         {
-            send(original_client_fd, buffer, bytes_read, 0);
-        }
-    }
+            char buffer[1024];
+            int bytes_read = read(original_client_fd, buffer, sizeof(buffer));
+            if (bytes_read > 0)
+            {
+                send(sock, buffer, bytes_read, 0);
 
+                // Wait for the response from the mirror and send it back to the original client
+                bytes_read = read(sock, buffer, sizeof(buffer));
+                if (bytes_read > 0)
+                {
+                    send(original_client_fd, buffer, bytes_read, 0);
+                }
+            }
+        }
     close(sock); // Close the connection to the mirror
+    }
 }
 
 int main()
@@ -160,7 +170,8 @@ int main()
     signal(SIGCHLD, SIG_IGN); // Prevent zombie processes
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0); // socket() - creates a listening socket
-    if (server_fd < 0) {
+    if (server_fd < 0)
+    {
         perror("Socket creation failed");
         exit(EXIT_FAILURE);
     }
@@ -207,8 +218,8 @@ int main()
         }
 
         increment_connection_count();
-     
-       // Example server_id check, assuming current server is serverw24 and has ID 1
+
+        // Example server_id check, assuming current server is serverw24 and has ID 1
 
         int current_connection = read_connection_count();
         int server_to_handle = determine_server(current_connection);
@@ -217,7 +228,7 @@ int main()
         {
             // Handle connection here if serverw24 should handle it
             printf("Server selected for connection %d\n", current_connection);
-            fflush(stdout);  // Ensure the output is displayed immediately
+            fflush(stdout); // Ensure the output is displayed immediately
             pid_t pid = fork();
             if (pid == 0)
             { // Child process
@@ -232,16 +243,16 @@ int main()
         {
             // Redirect to mirror1
             printf("Mirror 1 selected for connection %d\n", current_connection);
-             fflush(stdout);  // Ensure the output is displayed immediately
+            fflush(stdout); // Ensure the output is displayed immediately
             redirect_to_mirror(client_fd, MIRROR1_IP, MIRROR1_PORT);
-            
+
             close(client_fd);
         }
         else if (server_to_handle == 3)
         {
             // Redirect to mirror2
             printf("Mirror 2 selected for connection %d\n", current_connection);
-             fflush(stdout);  // Ensure the output is displayed immediately
+            fflush(stdout); // Ensure the output is displayed immediately
             redirect_to_mirror(client_fd, MIRROR2_IP, MIRROR2_PORT);
             close(client_fd);
         }
