@@ -16,7 +16,6 @@
 #include <limits.h>
 #include <tar.h>
 #include <sys/syscall.h> // Include for SYS_statx
-#include <signal.h>  // Include for signal handling
 
 #if !defined(STATX_BTIME)
 #define STATX_BTIME 0x00000800U
@@ -64,7 +63,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    signal(SIGCHLD, SIG_IGN); // Prevent zombie processes
+    // signal(SIGCHLD, SIG_IGN); // Prevent zombie processes
 
     while (1) {
         client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
@@ -91,24 +90,16 @@ void crequest(int client_fd) {
     char buffer[1024];
 
     while (1) {
-        memset(buffer, 0, sizeof(buffer)); // Clear the buffer to avoid handling stale data
-        ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1); // Read the command
-
+        memset(buffer, 0, sizeof(buffer));
+        ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
         if (bytes_read <= 0) {
-            if (bytes_read == 0) {
-                printf("Client disconnected\n");
-            } else {
-                perror("Read error");
-            }
-            break; // Exit loop on read error or client disconnect
+            break;  // Read error or connection closed by client
         }
 
-        buffer[bytes_read] = '\0'; // Null-terminate the string
-
+        buffer[bytes_read] = '\0'; // Ensure string is null-terminated
         printf("Command received: %s\n", buffer);
-        fflush(stdout);  // Ensures that the command printout is flushed immediately
 
-        // Handle commands
+        // Example command handlers, make sure to implement these based on your actual application logic
         if (strncmp(buffer, "dirlist -a", 10) == 0) {
             handle_dirlist_a(client_fd);
         } else if (strncmp(buffer, "dirlist -t", 10) == 0) {
@@ -124,10 +115,8 @@ void crequest(int client_fd) {
         } else if (strncmp(buffer, "w24fda ", 7) == 0) {
             handle_w24fda(client_fd, buffer + 7);
         } else if (strcmp(buffer, "quitc") == 0) {
-            printf("Quit command received, closing connection.\n");
-            break; // Close connection on quit command
-        } else {
-            printf("Command not recognized or not implemented.\n");
+            printf("Client Disconnected");
+            break; // Exit the loop and close the connection
         }
     }
     close(client_fd); // Close the client socket at the end of the session
@@ -577,10 +566,29 @@ void handle_w24ft(int client_fd, const char *extensionList)
 time_t parse_date_db(const char *date_str)
 {
     struct tm tm = {0};
+
+    // Validate the date format strictly as YYYY-MM-DD
+    if (strlen(date_str) != 10) {
+        return -1; // Length must be exactly 10 characters for valid YYYY-MM-DD format
+    }
+
+    // Check for correct delimiter positions
+    if (date_str[4] != '-' || date_str[7] != '-') {
+        return -1; // Delimiters must be at the correct positions
+    }
+
+    // Parse the date string
     if (strptime(date_str, "%Y-%m-%d", &tm) == NULL)
     {
         return -1; // Parsing error
     }
+
+    // Validate ranges (optional, strptime does some checking but more could be done if necessary)
+    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31) {
+        return -1;
+    }
+
+    // Return time in seconds since the epoch
     return mktime(&tm);
 }
 
@@ -655,10 +663,29 @@ void handle_w24fdb(int client_fd, const char *dateStr)
 time_t parse_date_da(const char *date_str)
 {
     struct tm tm = {0};
+
+    // Validate the date format strictly as YYYY-MM-DD
+    if (strlen(date_str) != 10) {
+        return -1; // Length must be exactly 10 characters for valid YYYY-MM-DD format
+    }
+
+    // Check for correct delimiter positions
+    if (date_str[4] != '-' || date_str[7] != '-') {
+        return -1; // Delimiters must be at the correct positions
+    }
+
+    // Parse the date string
     if (strptime(date_str, "%Y-%m-%d", &tm) == NULL)
     {
         return -1; // Parsing error
     }
+
+    // Validate ranges (optional, strptime does some checking but more could be done if necessary)
+    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31) {
+        return -1;
+    }
+
+    // Return time in seconds since the epoch
     return mktime(&tm);
 }
 

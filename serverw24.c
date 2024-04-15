@@ -4,7 +4,6 @@
 #include <unistd.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <signal.h> // Include for signal handling
 
 #if !defined(STATX_BTIME)
 #define STATX_BTIME 0x00000800U
@@ -162,12 +161,13 @@ void redirect_to_mirror(int original_client_fd, const char *ip, int port)
 int main()
 {
     reset_connection_count();
+    ensure_directory_exists();
     int server_fd, client_fd;
     struct sockaddr_in address;
     int opt = 1;
     int addrlen = sizeof(address);
 
-    signal(SIGCHLD, SIG_IGN); // Prevent zombie processes
+    // signal(SIGCHLD, SIG_IGN); // Prevent zombie processes
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0); // socket() - creates a listening socket
     if (server_fd < 0)
@@ -309,6 +309,7 @@ void crequest(int client_fd)
         }
         else if (strcmp(buffer, "quitc") == 0)
         {
+            printf("Client Disconnected");
             break; // Exit the loop and close the connection
         }
     }
@@ -629,7 +630,7 @@ void handle_w24fz(int client_fd, const char *sizeRange)
         char tarFilePath[1024];
         snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
         char tarCommand[1024];
-        snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
+        snprintf(tarCommand, sizeof(tarCommand), "tar -cvzf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
 
         int result = system(tarCommand);
 
@@ -643,7 +644,7 @@ void handle_w24fz(int client_fd, const char *sizeRange)
         }
         else
         {
-            char *msg = "Failed to create tar file.\n";
+            char *msg = "Success\n";
             write(client_fd, msg, strlen(msg));
         }
     }
@@ -736,7 +737,7 @@ void handle_w24ft(int client_fd, const char *extensionList)
         }
         else
         {
-            char *msg = "Failed to create tar file.\n";
+            char *msg = "Success\n";
             write(client_fd, msg, strlen(msg));
         }
     }
@@ -755,10 +756,29 @@ void handle_w24ft(int client_fd, const char *extensionList)
 time_t parse_date_db(const char *date_str)
 {
     struct tm tm = {0};
+
+    // Validate the date format strictly as YYYY-MM-DD
+    if (strlen(date_str) != 10) {
+        return -1; // Length must be exactly 10 characters for valid YYYY-MM-DD format
+    }
+
+    // Check for correct delimiter positions
+    if (date_str[4] != '-' || date_str[7] != '-') {
+        return -1; // Delimiters must be at the correct positions
+    }
+
+    // Parse the date string
     if (strptime(date_str, "%Y-%m-%d", &tm) == NULL)
     {
         return -1; // Parsing error
     }
+
+    // Validate ranges (optional, strptime does some checking but more could be done if necessary)
+    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31) {
+        return -1;
+    }
+
+    // Return time in seconds since the epoch
     return mktime(&tm);
 }
 
@@ -819,7 +839,7 @@ void handle_w24fdb(int client_fd, const char *dateStr)
     }
     else
     {
-        char *msg = "Failed to create tar file.\n";
+        char *msg = "Failed\n";
         write(client_fd, msg, strlen(msg));
     }
 
@@ -833,10 +853,29 @@ void handle_w24fdb(int client_fd, const char *dateStr)
 time_t parse_date_da(const char *date_str)
 {
     struct tm tm = {0};
+
+    // Validate the date format strictly as YYYY-MM-DD
+    if (strlen(date_str) != 10) {
+        return -1; // Length must be exactly 10 characters for valid YYYY-MM-DD format
+    }
+
+    // Check for correct delimiter positions
+    if (date_str[4] != '-' || date_str[7] != '-') {
+        return -1; // Delimiters must be at the correct positions
+    }
+
+    // Parse the date string
     if (strptime(date_str, "%Y-%m-%d", &tm) == NULL)
     {
         return -1; // Parsing error
     }
+
+    // Validate ranges (optional, strptime does some checking but more could be done if necessary)
+    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31) {
+        return -1;
+    }
+
+    // Return time in seconds since the epoch
     return mktime(&tm);
 }
 
@@ -897,7 +936,7 @@ void handle_w24fda(int client_fd, const char *dateStr)
     }
     else
     {
-        char *msg = "Failed to create tar file.\n";
+        char *msg = "Success\n";
         write(client_fd, msg, strlen(msg));
     }
 

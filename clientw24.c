@@ -91,6 +91,8 @@ int validate_command(const char* command) {
         return 1;
     } else if (strncmp(command, "w24fdb ", 7) == 0 || strncmp(command, "w24fda ", 7) == 0) {
         // Validate w24fdb and w24fda commands further if necessary
+
+        
         return 1;
     } else if (strcmp(command, "quitc") == 0) {
         return 1;  // Valid quit command
