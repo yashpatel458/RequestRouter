@@ -607,12 +607,12 @@ void handle_w24fz(int client_fd, const char *sizeRange)
     sscanf(sizeRange, "%ld %ld", &size1, &size2);
 
     // Validate the size range
-    if (size1 > size2 || size1 < 0 || size2 < 0)
-    {
-        char *msg = "Invalid size range.\n";
-        write(client_fd, msg, strlen(msg));
-        return;
-    }
+    // if (size1 > size2 || size1 < 0 || size2 < 0)
+    // {
+    //     char *msg = "Invalid size range.\n";
+    //     write(client_fd, msg, strlen(msg));
+    //     return;
+    // }
 
     global_size_filter.min_size = size1;
     global_size_filter.max_size = size2;

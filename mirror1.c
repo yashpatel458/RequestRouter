@@ -63,8 +63,6 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    // signal(SIGCHLD, SIG_IGN); // Prevent zombie processes
-
     while (1) {
         client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
         if (client_fd < 0) {
