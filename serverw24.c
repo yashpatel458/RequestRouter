@@ -409,15 +409,15 @@ void handle_dirlist_a(int client_fd)
     write(client_fd, bigBuffer, strlen(bigBuffer));
 }
 
-// OPTION 2 ------------------------------------------------------------------//
+// COMMAND 2 ------------------------------------------------------------------
 
 /*
 The DirEntry struct holds information about a directory, including its full path, name, and creation time.
 */
 typedef struct
 {
-    char *full_path; // Full path of the directory entry
-    char *dir_name; // Name of the directory
+    char *full_path;       // Full path of the directory entry
+    char *dir_name;        // Name of the directory
     struct timespec btime; // Time when the directory was created (in timespec format)
 } DirEntry;
 
@@ -463,12 +463,12 @@ void list_subdirectories_recursive_t(const char *base_path, DirEntry dirList[], 
             {
                 snprintf(path, sizeof(path), "%s/%s", base_path, dir->d_name); // Create the next directory path
 
-                 // Get the creation time of the directory
+                // Get the creation time of the directory
                 if (syscall(SYS_statx, AT_FDCWD, path, AT_SYMLINK_NOFOLLOW, STATX_BTIME, &statbuf) == 0)
                 {
-                    dirList[*count].full_path = strdup(path); // Copy the full path to the DirEntry structure
+                    dirList[*count].full_path = strdup(path);       // Copy the full path to the DirEntry structure
                     dirList[*count].dir_name = strdup(dir->d_name); // Copy the directory name to the DirEntry structure
-                    
+
                     // Assign the creation time to the DirEntry structure
                     dirList[*count].btime.tv_sec = statbuf.stx_btime.tv_sec;
                     dirList[*count].btime.tv_nsec = statbuf.stx_btime.tv_nsec;
@@ -497,16 +497,16 @@ void handle_dirlist_t(int client_fd)
     }
 
     list_subdirectories_recursive_t(home_dir, dirList, &count, MAX_DIRS); // List subdirectories recursively
-    qsort(dirList, count, sizeof(DirEntry), dir_time_compare); // Sort the directory entries based on creation time
+    qsort(dirList, count, sizeof(DirEntry), dir_time_compare);            // Sort the directory entries based on creation time
 
     char response[65536] = ""; // Buffer to store the response
     for (int i = 0; i < count; i++)
     {
         strcat(response, dirList[i].dir_name); // Concatenate directory name to response
-        strcat(response, "\n");  // Add newline after each directory name
-        printf("%s\n", dirList[i].dir_name); // Print directory name on the server side
-        free(dirList[i].full_path);  // Free memory allocated for full path
-        free(dirList[i].dir_name);  // Free memory allocated for directory name
+        strcat(response, "\n");                // Add newline after each directory name
+        printf("%s\n", dirList[i].dir_name);   // Print directory name on the server side
+        free(dirList[i].full_path);            // Free memory allocated for full path
+        free(dirList[i].dir_name);             // Free memory allocated for directory name
     }
 
     write(client_fd, response, strlen(response)); // Send directory list to client
@@ -514,14 +514,16 @@ void handle_dirlist_t(int client_fd)
     if (count == 0)
     {
         const char *msg = "No subdirectories found.\n"; // Message for no subdirectories
-        write(client_fd, msg, strlen(msg)); // Send message to client
-        printf("%s", msg); // Also print on the server side
+        write(client_fd, msg, strlen(msg));             // Send message to client
+        printf("%s", msg);                              // Also print on the server side
     }
 }
 
-//  OPTION 3 ------------------------------------------------------------------//
+//  COMMAND 3 ------------------------------------------------------------------
 
-// Structure to define file information
+/*
+The file_info struct holds information about a file, including its path, size, mode (permissions), and creation time.
+*/
 struct file_info
 {
     char path[PATH_MAX];
@@ -530,10 +532,12 @@ struct file_info
     struct timespec btime;
 };
 
-// Global variables to store found file information and target filename
 static struct file_info found_file;
 static char target_filename[256];
 
+/*
+The find_file_in_directory function searches for a file with a name matching target_filename in the directory specified by dir_path and its subdirectories. If the file is found, its information is stored in found_file and the function returns 1. If the file is not found, the function returns 0.
+*/
 static int find_file_in_directory(const char *dir_path)
 {
     // Open the directory
@@ -590,6 +594,11 @@ static int find_file_in_directory(const char *dir_path)
     return 0; // File not found
 }
 
+/*
+The handle_w24fn function is a handler for a client request to find a file.
+It copies the target filename from the request, gets the home directory path, and calls find_file_in_directory to search for the file.
+If the file is found, it sends a response to the client with the file's details. If the file is not found, it sends an error message to the client.
+*/
 void handle_w24fn(int client_fd, const char *filename)
 {
     // Copy the target filename
@@ -626,9 +635,11 @@ void handle_w24fn(int client_fd, const char *filename)
     }
 }
 
-//  OPTION 4  ------------------------------------------------------------------//
+//  COMMAND 4  ------------------------------------------------------------------
 
-// Structure to define the size filter
+/*
+The size_filter struct holds a range of file sizes, including a minimum and maximum size.
+*/
 struct size_filter
 {
     off_t min_size;
@@ -661,6 +672,11 @@ static int check_file_size(const char *fpath, const struct stat *sb, int typefla
     return 0; // Continue traversing
 }
 
+/*
+The handle_w24fz function is a handler for a client request to find files within a certain size range.
+It parses the size range from the request, updates global_size_filter with the size range, and then uses nftw to traverse the file system from the home directory, checking each file's size with check_file_size.
+If any files are found within the size range, it creates a tar.gz file from the list of found files and sends a response to the client.
+*/
 void handle_w24fz(int client_fd, const char *sizeRange)
 {
     // Variables to store the size range
@@ -698,8 +714,8 @@ void handle_w24fz(int client_fd, const char *sizeRange)
         }
         else
         {
-            // If there is an error in creating the tar.gz file, send an error message to the client
-            char *msg = "Error creating tar file.\n";
+            char *msg = "Error creating tar file.\n"; // If there is an error in creating the tar.gz file, send an error message to the client
+
             write(client_fd, msg, strlen(msg));
         }
     }
@@ -709,11 +725,10 @@ void handle_w24fz(int client_fd, const char *sizeRange)
         write(client_fd, msg, strlen(msg));
     }
 
-    // Cleanup the temporary file list after use
-    unlink(TEMP_FILE_LIST);
+    unlink(TEMP_FILE_LIST); // Cleanup the temporary file list after use
 }
 
-//  OPTION 5 ------------------------------------------------------------------//
+//  COMMAND 5 ------------------------------------------------------------------//
 
 static char *extensions[MAX_EXTENSIONS];
 static int ext_count = 0;
@@ -748,13 +763,16 @@ static int check_file_extension(const char *fpath, const struct stat *sb, int ty
     return 0; // Continue traversing
 }
 
+/*
+The handle_w24ft function is a handler for a client request to find files with certain extensions.
+It clears the temporary file list, then uses nftw to traverse the file system from the home directory, checking each file's extension with check_file_extension.
+If any files are found with matching extensions, it creates a tar.gz file from the list of found files and sends a response to the client.
+*/
 void handle_w24ft(int client_fd, const char *extensionList)
 {
-    // Clear the temporary file list
-    fclose(fopen(TEMP_FILE_LIST, "w"));
+    fclose(fopen(TEMP_FILE_LIST, "w")); // Clear the temporary file list
 
-    // Walk through the file system from the home directory
-    nftw(getenv("HOME"), check_file_extension, 20, FTW_PHYS);
+    nftw(getenv("HOME"), check_file_extension, 20, FTW_PHYS); // Walk through the file system from the home directory
 
     // Check if the temporary file list is not empty
     struct stat statbuf;
@@ -787,81 +805,12 @@ void handle_w24ft(int client_fd, const char *extensionList)
     unlink(TEMP_FILE_LIST);
 }
 
-//  OPTION 6 ------------------------------------------------------------------//
+//  COMMAND 6 ------------------------------------------------------------------//
 
-// File check callback for nftw
-static int check_file_date_db(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
-{
-    // Including regular files and check against the global threshold time
-    if (typeflag == FTW_F && sb->st_ctime <= global_threshold_time)
-    {
-        FILE *fp = fopen(TEMP_FILE_LIST, "a");
-        if (fp)
-        {
-            // Writing the file path to the temporary file list
-            fprintf(fp, "%s\n", fpath);
-            fclose(fp);
-        }
-    }
-    return 0; // Continue traversal
-}
-
-// Global variable to hold the threshold date as time_t
-static time_t global_threshold_time;
-
-void handle_w24fdb(int client_fd, const char *dateStr)
-{
-    global_threshold_time = parse_date(dateStr); // Parse the date string to get the threshold time
-    if (global_threshold_time == -1)
-    {
-        // If the date format is invalid, send an error message to the client
-        const char *msg = "Invalid date format. Accepted format is (YYYY-MM-DD)\n";
-        write(client_fd, msg, strlen(msg));
-        return;
-    }
-
-    // Clear the temporary file list
-    fclose(fopen(TEMP_FILE_LIST, "w"));
-
-    // Walk through the file system from the home directory
-    nftw(getenv("HOME"), check_file_date_da, 20, FTW_PHYS);
-
-    // Prepare to create a tar.gz file from the list of found files
-    char tarFilePath[1024];
-    snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
-    char tarCommand[1024];
-    snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
-
-    if (system(tarCommand) == 0)
-    {
-        struct stat tarStat; // struct to store the tar file stats
-
-        // If the tar.gz file is created successfully
-        if (stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0)
-        {
-            char *msg = "Tar file created and sent.\n";
-            write(client_fd, msg, strlen(msg));
-        }
-        else
-        {
-            char *msg = "No files found with specified date.\n";
-            write(client_fd, msg, strlen(msg));
-        }
-    }
-    else
-    {
-        // If there is an error in creating the tar.gz file, send an error message to the client
-        char *msg = "Error creating tar file.\n";
-        write(client_fd, msg, strlen(msg));
-    }
-
-    // Cleanup to reomve temp tar file
-    unlink(TEMP_FILE_LIST);
-}
-
-//  OPTION 7 ------------------------------------------------------------------//
-
-// Utility function to convert date string to time_t
+/*
+Utility function to convert date string to time_t
+The parse_date function converts a date string to a time_t value. It validates the date format as YYYY-MM-DD, checks for correct delimiter positions, parses the date string, validates the ranges of year, month, and day, and returns the time in seconds since the epoch.
+*/
 time_t parse_date(const char *date_str)
 {
     struct tm tm = {0};
@@ -895,6 +844,77 @@ time_t parse_date(const char *date_str)
 }
 
 // File check callback for nftw
+static int check_file_date_db(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
+{
+    // Including regular files and check against the global threshold time
+    if (typeflag == FTW_F && sb->st_ctime <= global_threshold_time)
+    {
+        FILE *fp = fopen(TEMP_FILE_LIST, "a");
+        if (fp)
+        {
+            // Writing the file path to the temporary file list
+            fprintf(fp, "%s\n", fpath);
+            fclose(fp);
+        }
+    }
+    return 0; // Continue traversal
+}
+
+static time_t global_threshold_time; // Global variable to hold the threshold date as time_t
+
+/*
+The handle_w24fdb function is a handler for a client request to find files created before a certain date.
+*/
+void handle_w24fdb(int client_fd, const char *dateStr)
+{
+    global_threshold_time = parse_date(dateStr); // Parse the date string to get the threshold time
+    if (global_threshold_time == -1)
+    {
+        // If the date format is invalid, send an error message to the client
+        const char *msg = "Invalid date format. Accepted format is (YYYY-MM-DD)\n";
+        write(client_fd, msg, strlen(msg));
+        return;
+    }
+
+    fclose(fopen(TEMP_FILE_LIST, "w")); // Clear the temporary file list
+
+    nftw(getenv("HOME"), check_file_date_da, 20, FTW_PHYS); // Walk through the file system from the home directory
+
+    // Prepare to create a tar.gz file from the list of found files
+    char tarFilePath[1024];
+    snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
+    char tarCommand[1024];
+    snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
+
+    if (system(tarCommand) == 0)
+    {
+        struct stat tarStat; // struct to store the tar file stats
+
+        // If the tar.gz file is created successfully
+        if (stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0)
+        {
+            char *msg = "Tar file created and sent.\n";
+            write(client_fd, msg, strlen(msg));
+        }
+        else
+        {
+            char *msg = "No files found with specified date.\n";
+            write(client_fd, msg, strlen(msg));
+        }
+    }
+    else
+    {
+        // If there is an error in creating the tar.gz file, send an error message to the client
+        char *msg = "Error creating tar file.\n";
+        write(client_fd, msg, strlen(msg));
+    }
+
+    unlink(TEMP_FILE_LIST); // Cleanup to reomve temp tar file
+}
+
+//  COMMAND 7 ------------------------------------------------------------------//
+
+// File check callback for nftw
 static int check_file_date_da(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
 {
     // Including regular files and check against the global threshold time
@@ -914,6 +934,9 @@ static int check_file_date_da(const char *fpath, const struct stat *sb, int type
 // Global variable to hold the threshold date as time_t
 static time_t global_threshold_time;
 
+/*
+The handle_w24fda function is a handler for a client request to find files created after a certain date.
+*/
 void handle_w24fda(int client_fd, const char *dateStr)
 {
     global_threshold_time = parse_date(dateStr); // Parse the date string to get the threshold time
