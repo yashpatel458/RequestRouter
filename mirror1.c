@@ -32,7 +32,7 @@
 #define PATH_MAX 4096
 #define MAX_DIRS 10000
 #define TEMP_FILE_LIST "filelist.txt"
-#define MAX_EXTENSIONS 3 // Define maximum number of file extensions
+#define MAX_EXTENSIONS 3             // Define maximum number of file extensions
 static time_t global_threshold_time; // Declare globally
 
 // Include global variables and all function declarations
@@ -48,36 +48,42 @@ void handle_w24ft(int client_fd, const char *extensions);
 void handle_w24fdb(int client_fd, const char *date);
 void handle_w24fda(int client_fd, const char *date);
 
-int main() {
+int main()
+{
     int server_fd, client_fd;
     struct sockaddr_in address;
     int opt = 1;
     int addrlen = sizeof(address);
 
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    server_fd = socket(AF_INET, SOCK_STREAM, 0); // socket() - creates a listening socket with IPv4 and TCP connection
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
+    address.sin_family = AF_INET;         // Address family for IPv4
+    address.sin_addr.s_addr = INADDR_ANY; // INADDR_ANY - Binds to all available interfaces
+    address.sin_port = htons(PORT);       // htons() - converts the port number to network byte order | host to network short/long
 
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) // bind() - binds to IP and port address
+    {
         perror("Bind failed");
         exit(EXIT_FAILURE);
     }
 
-    if (listen(server_fd, 10) < 0) {
+    if (listen(server_fd, 10) < 0) // server listens for incoming client connections
+    {
         perror("Listen failed");
         exit(EXIT_FAILURE);
     }
 
-    while (1) {
-        client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-        if (client_fd < 0) {
+    while (1)
+    {
+        client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen); // accept() - accepts first incoming client connections in the queue, if no connection is present, it blocks and waits for a connection
+        if (client_fd < 0)
+        {
             perror("accept");
             continue;
         }
 
-        if (fork() == 0) { // Child process
+        if (fork() == 0)
+        {                     // Child process
             close(server_fd); // Close the listening socket in the child process
             crequest(client_fd);
             close(client_fd);
@@ -89,45 +95,62 @@ int main() {
     return 0;
 }
 
-
 // Implement the crequest function exactly as it's in the main server
-void crequest(int client_fd) {
+void crequest(int client_fd)
+{
     char buffer[1024];
 
-    while (1) {
+    while (1)
+    {
+        // Clear the buffer at the start of each loop
         memset(buffer, 0, sizeof(buffer));
+
+        // Read data from the client socket into the buffer, leaving space for the null terminator
         ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
-        if (bytes_read <= 0) {
-            break;  // Read error or connection closed by client
+        if (bytes_read <= 0)
+        {
+            break; // Break the loop if there's a read error or the client closes the connection
         }
 
         buffer[bytes_read] = '\0'; // Ensure string is null-terminated
-        printf("Command received: %s\n", buffer);
+        printf("🟠 Command received: %s\n", buffer);
 
-        // Example command handlers, make sure to implement these based on your actual application logic
-        if (strncmp(buffer, "dirlist -a", 10) == 0) {
+        if (strncmp(buffer, "dirlist -a", 10) == 0)
+        {
             handle_dirlist_a(client_fd);
-        } else if (strncmp(buffer, "dirlist -t", 10) == 0) {
+        }
+        else if (strncmp(buffer, "dirlist -t", 10) == 0)
+        {
             handle_dirlist_t(client_fd);
-        } else if (strncmp(buffer, "w24fn ", 6) == 0) {
+        }
+        else if (strncmp(buffer, "w24fn ", 6) == 0)
+        {
             handle_w24fn(client_fd, buffer + 6);
-        } else if (strncmp(buffer, "w24fz ", 6) == 0) {
+        }
+        else if (strncmp(buffer, "w24fz ", 6) == 0)
+        {
             handle_w24fz(client_fd, buffer + 6);
-        } else if (strncmp(buffer, "w24ft ", 6) == 0) {
+        }
+        else if (strncmp(buffer, "w24ft ", 6) == 0)
+        {
             handle_w24ft(client_fd, buffer + 6);
-        } else if (strncmp(buffer, "w24fdb ", 7) == 0) {
+        }
+        else if (strncmp(buffer, "w24fdb ", 7) == 0)
+        {
             handle_w24fdb(client_fd, buffer + 7);
-        } else if (strncmp(buffer, "w24fda ", 7) == 0) {
+        }
+        else if (strncmp(buffer, "w24fda ", 7) == 0)
+        {
             handle_w24fda(client_fd, buffer + 7);
-        } else if (strcmp(buffer, "quitc") == 0) {
+        }
+        else if (strcmp(buffer, "quitc") == 0)
+        {
             printf("Client Disconnected");
             break; // Exit the loop and close the connection
         }
     }
     close(client_fd); // Close the client socket at the end of the session
 }
-
-
 
 // Implement all the other handling functions as they are in the main server
 
@@ -573,12 +596,14 @@ time_t parse_date_db(const char *date_str)
     struct tm tm = {0};
 
     // Validate the date format strictly as YYYY-MM-DD
-    if (strlen(date_str) != 10) {
+    if (strlen(date_str) != 10)
+    {
         return -1; // Length must be exactly 10 characters for valid YYYY-MM-DD format
     }
 
     // Check for correct delimiter positions
-    if (date_str[4] != '-' || date_str[7] != '-') {
+    if (date_str[4] != '-' || date_str[7] != '-')
+    {
         return -1; // Delimiters must be at the correct positions
     }
 
@@ -589,7 +614,8 @@ time_t parse_date_db(const char *date_str)
     }
 
     // Validate ranges (optional, strptime does some checking but more could be done if necessary)
-    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31) {
+    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31)
+    {
         return -1;
     }
 
@@ -670,12 +696,14 @@ time_t parse_date_da(const char *date_str)
     struct tm tm = {0};
 
     // Validate the date format strictly as YYYY-MM-DD
-    if (strlen(date_str) != 10) {
+    if (strlen(date_str) != 10)
+    {
         return -1; // Length must be exactly 10 characters for valid YYYY-MM-DD format
     }
 
     // Check for correct delimiter positions
-    if (date_str[4] != '-' || date_str[7] != '-') {
+    if (date_str[4] != '-' || date_str[7] != '-')
+    {
         return -1; // Delimiters must be at the correct positions
     }
 
@@ -686,7 +714,8 @@ time_t parse_date_da(const char *date_str)
     }
 
     // Validate ranges (optional, strptime does some checking but more could be done if necessary)
-    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31) {
+    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31)
+    {
         return -1;
     }
 
