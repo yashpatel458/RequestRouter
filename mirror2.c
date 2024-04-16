@@ -24,6 +24,7 @@
 #include <tar.h>
 #include <sys/syscall.h>
 
+// Defining constant STATX_BTIME for specific operations if not already defined because statx is a more recent addition and may not be available on older systems. It requires a kernel version of 4.11 or newer.
 #if !defined(STATX_BTIME)
 #define STATX_BTIME 0x00000800U
 #endif
