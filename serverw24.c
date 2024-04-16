@@ -114,7 +114,7 @@ int read_connection_count()
 }
 
 /*
-The function increment_connection_count reads the current connection count from a file, increments it by one, and then writes the updated count back to the file. 
+The function increment_connection_count reads the current connection count from a file, increments it by one, and then writes the updated count back to the file.
 */
 void increment_connection_count()
 {
@@ -128,10 +128,10 @@ void increment_connection_count()
 }
 
 /*
-The function determine_server takes an integer count as input and determines which server to use based on this count. 
-For counts 1 to 3, it returns 1 (indicating serverw24); 
-for counts 4 to 6, it returns 2 (indicating mirror1); 
-for counts 7 to 9, it returns 3 (indicating mirror2). 
+The function determine_server takes an integer count as input and determines which server to use based on this count.
+For counts 1 to 3, it returns 1 (indicating serverw24);
+for counts 4 to 6, it returns 2 (indicating mirror1);
+for counts 7 to 9, it returns 3 (indicating mirror2).
 For counts 10 and above, it rotates among all three servers.
 */
 int determine_server(int count)
@@ -146,18 +146,18 @@ int determine_server(int count)
         return ((count - 1) % 3) + 1; // Rotate among all three servers
 }
 
-/* 
-The function redirect_to_mirror establishes a connection to a mirror server specified by ip and port, and then continuously forwards data between the original client and the mirror server. 
-If the connection to the mirror server fails, it outputs an error message and returns. If the connection is successful, it creates a child process that reads data from the original client, sends it to the mirror server, reads the response from the mirror server, and sends it back to the original client. 
+/*
+The function redirect_to_mirror establishes a connection to a mirror server specified by ip and port, and then continuously forwards data between the original client and the mirror server.
+If the connection to the mirror server fails, it outputs an error message and returns. If the connection is successful, it creates a child process that reads data from the original client, sends it to the mirror server, reads the response from the mirror server, and sends it back to the original client.
 This process continues indefinitely until the connection to the mirror server is closed.
 */
 void redirect_to_mirror(int original_client_fd, const char *ip, int port)
 {
     int m_sock_fd = socket(AF_INET, SOCK_STREAM, 0); // Create a new socket for communication with the mirror server
-    struct sockaddr_in mirror_addr; // struct for mirror address
+    struct sockaddr_in mirror_addr;                  // struct for mirror address
 
-    mirror_addr.sin_family = AF_INET;  // Address family for IPv4
-    mirror_addr.sin_port = htons(port);  // htons() - converts the port number to network byte order | host to network short/long
+    mirror_addr.sin_family = AF_INET;            // Address family for IPv4
+    mirror_addr.sin_port = htons(port);          // htons() - converts the port number to network byte order | host to network short/long
     mirror_addr.sin_addr.s_addr = inet_addr(ip); // inet_addr -  converts converts the IP address in dotted-decimal notation (like "127.0.0.1") to the appropriate binary format.
 
     if (connect(m_sock_fd, (struct sockaddr *)&mirror_addr, sizeof(mirror_addr)) < 0)
@@ -190,9 +190,11 @@ void redirect_to_mirror(int original_client_fd, const char *ip, int port)
     }
 }
 
+// --------------------------------------- MAIN FUNCTION ---------------------------------------
+
 int main()
 {
-    reset_connection_count(); // First we want to reset the connection count to 0
+    reset_connection_count();  // First we want to reset the connection count to 0
     ensure_directory_exists(); // Secondly, we want to make sure to create directory to store files returned from server
     int server_fd, client_fd;
     struct sockaddr_in address;
@@ -219,30 +221,23 @@ int main()
     {
         client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen); // accept() - accepts first incoming client connections in the queue, if no connection is present, it blocks and waits for a connection
 
-        /*
-        ARG1 // server_fd - socket descriptor
-        ARG2 // (struct sockaddr *)&address - pointer to the address structure
-        ARG3 // (socklen_t*)&addrlen - size of the address structure
-        */
-
         if (client_fd < 0)
         {
             perror("accept");
             continue;
         }
 
-        increment_connection_count();
+        increment_connection_count(); // Increment the connection count
 
-        // Example server_id check, assuming current server is serverw24 and has ID 1
-
+        // Example server selection logic
         int current_connection = read_connection_count();
         int server_to_handle = determine_server(current_connection);
 
         if (server_to_handle == 1)
         {
-            // Handle connection here if serverw24 should handle it
+            // serverw24 should handle it
             printf("Server selected for connection %d\n", current_connection);
-            fflush(stdout); // Ensure the output is displayed immediately
+            fflush(stdout);
             pid_t pid = fork();
             if (pid == 0)
             { // Child process
@@ -251,13 +246,13 @@ int main()
                 close(client_fd);
                 exit(0);
             }
-            close(client_fd); // Parent closes the client socket
+            close(client_fd);
         }
         else if (server_to_handle == 2)
         {
             // Redirect to mirror1
             printf("Mirror 1 selected for connection %d\n", current_connection);
-            fflush(stdout); // Ensure the output is displayed immediately
+            fflush(stdout);
             redirect_to_mirror(client_fd, MIRROR1_IP, MIRROR1_PORT);
 
             close(client_fd);
@@ -266,7 +261,7 @@ int main()
         {
             // Redirect to mirror2
             printf("Mirror 2 selected for connection %d\n", current_connection);
-            fflush(stdout); // Ensure the output is displayed immediately
+            fflush(stdout);
             redirect_to_mirror(client_fd, MIRROR2_IP, MIRROR2_PORT);
             close(client_fd);
         }
@@ -275,23 +270,30 @@ int main()
     return 0;
 }
 
+/*
+The crequest function continuously reads commands from a client, identified by client_fd, and calls the appropriate handler function based on the command received.
+If a read error occurs, the client disconnects, or the "quitc" command is received, the function stops reading and closes the connection to the client.
+*/
 void crequest(int client_fd)
 {
     char buffer[1024];
 
     while (1)
     {
-        memset(buffer, 0, sizeof(buffer));                                // Clear the buffer at the start of each loop
-        ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1); // Leave space for null terminator
+        // Clear the buffer at the start of each loop
+        memset(buffer, 0, sizeof(buffer));
+
+        // Read data from the client socket into the buffer, leaving space for the null terminator
+        ssize_t bytes_read = read(client_fd, buffer, sizeof(buffer) - 1);
 
         if (bytes_read <= 0)
         {
-            // Read error or connection closed by client
+            // Break the loop if there's a read error or the client closes the connection
             break;
         }
 
         buffer[bytes_read] = '\0'; // Ensure string is null-terminated
-        printf("Command received: %s\n", buffer);
+        printf("🟠 Command received: %s\n", buffer);
 
         if (strncmp(buffer, "dirlist -a", 10) == 0)
         {
@@ -330,69 +332,78 @@ void crequest(int client_fd)
     close(client_fd); // Close the client socket at the end of the session
 }
 
-//  OPTION 1 ------------------------------------------------------------------//
+//  COMMAND 1 ------------------------------------------------------------------
 
+/*
+The compare_strings function is a comparator function used for sorting strings in a case-insensitive manner.
+*/
 int compare_strings(const void *a, const void *b)
 {
     const char *str1 = *(const char **)a;
     const char *str2 = *(const char **)b;
-    return strcasecmp(str1, str2);
+    return strcasecmp(str1, str2); // Compare strings case-insensitively
 }
 
+/*
+ The list_subdirectories_recursive function recursively traverses directories starting from base_path, adding the names of non-hidden subdirectories to dirList until max_count is reached.
+*/
 void list_subdirectories_recursive(const char *base_path, char **dirList, int *count, int max_count)
 {
-    DIR *d = opendir(base_path);
+    DIR *d = opendir(base_path); // Open the directory specified by base_path
     if (!d)
     {
-        return;
+        return; // Return if directory cannot be opened
     }
 
     struct dirent *dir;
     while ((*count < max_count) && (dir = readdir(d)) != NULL)
     {
-        if (dir->d_type == DT_DIR && dir->d_name[0] != '.')
-        { // Skip hidden directories
+        if (dir->d_type == DT_DIR && dir->d_name[0] != '.') // Check if it's a directory and not hidden
+        {                                                   // Skip hidden directories
             if (strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0)
             {
-                dirList[*count] = strdup(dir->d_name);
-                (*count)++;
+                dirList[*count] = strdup(dir->d_name); // Copy directory name to dirList array
+                (*count)++;                            // Increment the count of directories
             }
 
             char next_path[PATH_MAX];
-            snprintf(next_path, PATH_MAX, "%s/%s", base_path, dir->d_name);
-            list_subdirectories_recursive(next_path, dirList, count, max_count);
+            snprintf(next_path, PATH_MAX, "%s/%s", base_path, dir->d_name);      // Create the next directory path
+            list_subdirectories_recursive(next_path, dirList, count, max_count); // Recursively list subdirectories
         }
     }
     closedir(d);
 }
 
+/*
+The handle_dirlist_a function retrieves a list of subdirectories from the home directory, sorts them, and sends the list to the client.
+*/
 void handle_dirlist_a(int client_fd)
 {
-    char *dirList[MAX_DIRS];
+    char *dirList[MAX_DIRS]; // Array to store directory names
     int count = 0;
 
-    char *home_dir = getenv("HOME");
+    char *home_dir = getenv("HOME"); // Get the user's home directory
     if (!home_dir)
     {
         home_dir = "/";
     }
 
-    list_subdirectories_recursive(home_dir, dirList, &count, MAX_DIRS);
+    list_subdirectories_recursive(home_dir, dirList, &count, MAX_DIRS); // List subdirectories recursively
 
-    qsort(dirList, count, sizeof(char *), compare_strings);
+    qsort(dirList, count, sizeof(char *), compare_strings); // Sort the directory list alphabetically
 
-    char bigBuffer[65536] = {0}; // Adjust size as needed
+    char bigBuffer[65536] = {0}; // Buffer to store directory names and messages
     for (int i = 0; i < count; i++)
     {
         strcat(bigBuffer, dirList[i]);
         strcat(bigBuffer, "\n");
-        printf("%s\n", dirList[i]); // Print on server side
-        free(dirList[i]);           // Free after copying to buffer
+        printf("%s\n", dirList[i]); // Print directory name on the server side
+        free(dirList[i]);           // Free memory allocated for directory namer
     }
 
     if (count == 0)
     {
-        strcpy(bigBuffer, "No subdirectories found.\n");
+        strcpy(bigBuffer, "No subdirectories found.\n"); // Message for no subdirectories
     }
 
     write(client_fd, bigBuffer, strlen(bigBuffer));
@@ -400,17 +411,25 @@ void handle_dirlist_a(int client_fd)
 
 // OPTION 2 ------------------------------------------------------------------//
 
+/*
+The DirEntry struct holds information about a directory, including its full path, name, and creation time.
+*/
 typedef struct
 {
-    char *full_path;
-    char *dir_name;
-    struct timespec btime; // Adjusted for timespec
+    char *full_path; // Full path of the directory entry
+    char *dir_name; // Name of the directory
+    struct timespec btime; // Time when the directory was created (in timespec format)
 } DirEntry;
 
+/*
+The dir_time_compare function is a comparator used for sorting DirEntry objects based on their creation time.
+*/
 int dir_time_compare(const void *a, const void *b)
 {
     const DirEntry *dir1 = (const DirEntry *)a;
     const DirEntry *dir2 = (const DirEntry *)b;
+
+    // Compare the creation times of the directories
     if (dir1->btime.tv_sec < dir2->btime.tv_sec)
         return -1;
     if (dir1->btime.tv_sec > dir2->btime.tv_sec)
@@ -419,15 +438,18 @@ int dir_time_compare(const void *a, const void *b)
         return -1;
     if (dir1->btime.tv_nsec > dir2->btime.tv_nsec)
         return 1;
-    return 0;
+    return 0; // Return 0 if both directories have the same creation time
 }
 
+/*
+The list_subdirectories_recursive_t function recursively traverses directories starting from base_path, adding information about subdirectories to dirList until max_count is reached.
+*/
 void list_subdirectories_recursive_t(const char *base_path, DirEntry dirList[], int *count, int max_count)
 {
-    DIR *d = opendir(base_path);
+    DIR *d = opendir(base_path); // Open the directory specified by base_path
     if (!d)
     {
-        return;
+        return; // Return if directory cannot be opened
     }
 
     struct dirent *dir;
@@ -435,31 +457,37 @@ void list_subdirectories_recursive_t(const char *base_path, DirEntry dirList[], 
     char path[1024];
     while ((*count < max_count) && (dir = readdir(d)) != NULL)
     {
-        if (dir->d_type == DT_DIR && dir->d_name[0] != '.')
+        if (dir->d_type == DT_DIR && dir->d_name[0] != '.') // Check if it's a directory and not hidden
         {
             if (strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0)
             {
-                snprintf(path, sizeof(path), "%s/%s", base_path, dir->d_name);
+                snprintf(path, sizeof(path), "%s/%s", base_path, dir->d_name); // Create the next directory path
+
+                 // Get the creation time of the directory
                 if (syscall(SYS_statx, AT_FDCWD, path, AT_SYMLINK_NOFOLLOW, STATX_BTIME, &statbuf) == 0)
                 {
-                    dirList[*count].full_path = strdup(path);
-                    dirList[*count].dir_name = strdup(dir->d_name);
-                    // Assigning the fields individually
+                    dirList[*count].full_path = strdup(path); // Copy the full path to the DirEntry structure
+                    dirList[*count].dir_name = strdup(dir->d_name); // Copy the directory name to the DirEntry structure
+                    
+                    // Assign the creation time to the DirEntry structure
                     dirList[*count].btime.tv_sec = statbuf.stx_btime.tv_sec;
                     dirList[*count].btime.tv_nsec = statbuf.stx_btime.tv_nsec;
-                    (*count)++;
+                    (*count)++; // Increment the count of directories
                 }
 
-                list_subdirectories_recursive_t(path, dirList, count, max_count);
+                list_subdirectories_recursive_t(path, dirList, count, max_count); // Recursively list subdirectories
             }
         }
     }
     closedir(d);
 }
 
+/*
+The handle_dirlist_t function retrieves a list of subdirectories from the home directory, sorts them by creation time, and sends the list to the client.
+*/
 void handle_dirlist_t(int client_fd)
 {
-    DirEntry dirList[MAX_DIRS]; // Assuming MAX_DIRS is defined and large enough
+    DirEntry dirList[MAX_DIRS]; // Array to store directory entries
     int count = 0;
 
     char *home_dir = getenv("HOME");
@@ -468,25 +496,25 @@ void handle_dirlist_t(int client_fd)
         home_dir = "/";
     }
 
-    list_subdirectories_recursive_t(home_dir, dirList, &count, MAX_DIRS);
-    qsort(dirList, count, sizeof(DirEntry), dir_time_compare);
+    list_subdirectories_recursive_t(home_dir, dirList, &count, MAX_DIRS); // List subdirectories recursively
+    qsort(dirList, count, sizeof(DirEntry), dir_time_compare); // Sort the directory entries based on creation time
 
-    char response[65536] = ""; // Ensure the buffer is large enough
+    char response[65536] = ""; // Buffer to store the response
     for (int i = 0; i < count; i++)
     {
-        strcat(response, dirList[i].dir_name);
-        strcat(response, "\n");
-        printf("%s\n", dirList[i].dir_name); // Print only directory name on the server side
-        free(dirList[i].full_path);
-        free(dirList[i].dir_name);
+        strcat(response, dirList[i].dir_name); // Concatenate directory name to response
+        strcat(response, "\n");  // Add newline after each directory name
+        printf("%s\n", dirList[i].dir_name); // Print directory name on the server side
+        free(dirList[i].full_path);  // Free memory allocated for full path
+        free(dirList[i].dir_name);  // Free memory allocated for directory name
     }
 
-    write(client_fd, response, strlen(response));
+    write(client_fd, response, strlen(response)); // Send directory list to client
 
     if (count == 0)
     {
-        const char *msg = "No subdirectories found.\n";
-        write(client_fd, msg, strlen(msg));
+        const char *msg = "No subdirectories found.\n"; // Message for no subdirectories
+        write(client_fd, msg, strlen(msg)); // Send message to client
         printf("%s", msg); // Also print on the server side
     }
 }
