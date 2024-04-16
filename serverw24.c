@@ -53,7 +53,7 @@
 // Global variable to hold the threshold date as time_t
 static time_t global_threshold_time;
 
-// Function prototypes for handling client requests
+// Function declartions for handling client requests
 void crequest(int client_fd);
 void handle_dirlist_a(int client_fd);
 void handle_dirlist_t(int client_fd);
@@ -190,7 +190,7 @@ void redirect_to_mirror(int original_client_fd, const char *ip, int port)
     }
 }
 
-// --------------------------------------- MAIN FUNCTION ---------------------------------------
+// 🟡🟡🟡🟡🟡🟡🟡🟡 MAIN FUNCTION 🟡🟡🟡🟡🟡🟡🟡🟡
 
 int main()
 {
@@ -213,9 +213,17 @@ int main()
     address.sin_addr.s_addr = INADDR_ANY; // INADDR_ANY - Binds to all available interfaces
     address.sin_port = htons(PORT);       // htons() - converts the port number to network byte order | host to network short/long
 
-    bind(server_fd, (struct sockaddr *)&address, sizeof(address)); // bind() - binds to IP and port address
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) // bind() - binds to IP and port address
+    {
+        perror("Bind failed");
+        exit(EXIT_FAILURE);
+    }
 
-    listen(server_fd, 100); // server listens for incoming client connections
+    if (listen(server_fd, 100) < 0) // server listens for incoming client connections
+    {
+        perror("Listen failed");
+        exit(EXIT_FAILURE);
+    }
 
     while (1)
     {
@@ -293,7 +301,7 @@ void crequest(int client_fd)
         }
 
         buffer[bytes_read] = '\0'; // Ensure string is null-terminated
-        printf("🟠 Command received: %s\n", buffer);
+        printf("\n🟠 Command received: %s\n", buffer);
 
         if (strncmp(buffer, "dirlist -a", 10) == 0)
         {
@@ -770,6 +778,32 @@ If any files are found with matching extensions, it creates a tar.gz file from t
 */
 void handle_w24ft(int client_fd, const char *extensionList)
 {
+
+    // Reset extension count for each call
+    ext_count = 0;
+
+    // Parse the extension list and count the extensions
+    char *token = strtok((char *)extensionList, " ");
+    while (token)
+    {
+        if (ext_count < MAX_EXTENSIONS)
+        {
+            extensions[ext_count++] = token;
+            token = strtok(NULL, " ");
+        }
+        else
+        {
+            write(client_fd, "Too many file types specified. Max 3 allowed.\n", 45);
+            return;
+        }
+    }
+
+    if (ext_count == 0)
+    {
+        write(client_fd, "No file types specified.\n", 26);
+        return;
+    }
+
     fclose(fopen(TEMP_FILE_LIST, "w")); // Clear the temporary file list
 
     nftw(getenv("HOME"), check_file_extension, 20, FTW_PHYS); // Walk through the file system from the home directory
@@ -878,7 +912,7 @@ void handle_w24fdb(int client_fd, const char *dateStr)
 
     fclose(fopen(TEMP_FILE_LIST, "w")); // Clear the temporary file list
 
-    nftw(getenv("HOME"), check_file_date_da, 20, FTW_PHYS); // Walk through the file system from the home directory
+    nftw(getenv("HOME"), check_file_date_db, 20, FTW_PHYS); // Walk through the file system from the home directory
 
     // Prepare to create a tar.gz file from the list of found files
     char tarFilePath[1024];

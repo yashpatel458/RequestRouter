@@ -56,7 +56,7 @@ int main()
 
     while (1)
     {
-        printf("\nEnter any command: \n (dirlist -a | dirlist -t | w24fn <filename> | w24fz <size1> <size2> | w24ft <extension list> | w24fdb <date> | w24fda <date>)\n");
+        printf("\nEnter any command: \n (dirlist -a | dirlist -t | w24fn <filename> | w24fz <size1> <size2> | w24ft <extension list> | w24fdb <date> | w24fda <date>)\n\n");
         scanf(" %255[^\n]", command);
 
         if (!validate_command(command))
@@ -66,7 +66,7 @@ int main()
         }
 
         send(sock, command, strlen(command), 0);
-        printf("Command sent: %s\n", command);
+        printf("\nCommand sent: %s\n", command);
 
         if (strcmp(command, "quitc") == 0)
         {
@@ -77,11 +77,11 @@ int main()
         int bytes_read = read(sock, buffer, sizeof(buffer));
         if (bytes_read > 0)
         {
-            printf("🟢 Response from server: %s\n", buffer);
+            printf("\n🟢 Response from server: %s\n", buffer);
         }
         else
         {
-            printf("🔴 No response from server.\n");
+            printf("\n🔴 No response from server.\n");
         }
     }
 
@@ -162,7 +162,6 @@ int validate_command(const char *command)
     }
     else if (strncmp(command, "w24fdb ", 7) == 0 || strncmp(command, "w24fda ", 7) == 0)
     {
-
         return 1;
     }
     else if (strcmp(command, "quitc") == 0)
