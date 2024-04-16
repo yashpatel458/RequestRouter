@@ -114,7 +114,7 @@ int read_connection_count()
 }
 
 /*
-The function increment_connection_count reads the current connection count from a file, increments it by one, and then writes the updated count back to the file. 
+The function increment_connection_count reads the current connection count from a file, increments it by one, and then writes the updated count back to the file.
 */
 void increment_connection_count()
 {
@@ -128,10 +128,10 @@ void increment_connection_count()
 }
 
 /*
-The function determine_server takes an integer count as input and determines which server to use based on this count. 
-For counts 1 to 3, it returns 1 (indicating serverw24); 
-for counts 4 to 6, it returns 2 (indicating mirror1); 
-for counts 7 to 9, it returns 3 (indicating mirror2). 
+The function determine_server takes an integer count as input and determines which server to use based on this count.
+For counts 1 to 3, it returns 1 (indicating serverw24);
+for counts 4 to 6, it returns 2 (indicating mirror1);
+for counts 7 to 9, it returns 3 (indicating mirror2).
 For counts 10 and above, it rotates among all three servers.
 */
 int determine_server(int count)
@@ -146,18 +146,18 @@ int determine_server(int count)
         return ((count - 1) % 3) + 1; // Rotate among all three servers
 }
 
-/* 
-The function redirect_to_mirror establishes a connection to a mirror server specified by ip and port, and then continuously forwards data between the original client and the mirror server. 
-If the connection to the mirror server fails, it outputs an error message and returns. If the connection is successful, it creates a child process that reads data from the original client, sends it to the mirror server, reads the response from the mirror server, and sends it back to the original client. 
+/*
+The function redirect_to_mirror establishes a connection to a mirror server specified by ip and port, and then continuously forwards data between the original client and the mirror server.
+If the connection to the mirror server fails, it outputs an error message and returns. If the connection is successful, it creates a child process that reads data from the original client, sends it to the mirror server, reads the response from the mirror server, and sends it back to the original client.
 This process continues indefinitely until the connection to the mirror server is closed.
 */
 void redirect_to_mirror(int original_client_fd, const char *ip, int port)
 {
     int m_sock_fd = socket(AF_INET, SOCK_STREAM, 0); // Create a new socket for communication with the mirror server
-    struct sockaddr_in mirror_addr; // struct for mirror address
+    struct sockaddr_in mirror_addr;                  // struct for mirror address
 
-    mirror_addr.sin_family = AF_INET;  // Address family for IPv4
-    mirror_addr.sin_port = htons(port);  // htons() - converts the port number to network byte order | host to network short/long
+    mirror_addr.sin_family = AF_INET;            // Address family for IPv4
+    mirror_addr.sin_port = htons(port);          // htons() - converts the port number to network byte order | host to network short/long
     mirror_addr.sin_addr.s_addr = inet_addr(ip); // inet_addr -  converts converts the IP address in dotted-decimal notation (like "127.0.0.1") to the appropriate binary format.
 
     if (connect(m_sock_fd, (struct sockaddr *)&mirror_addr, sizeof(mirror_addr)) < 0)
@@ -192,7 +192,7 @@ void redirect_to_mirror(int original_client_fd, const char *ip, int port)
 
 int main()
 {
-    reset_connection_count(); // First we want to reset the connection count to 0
+    reset_connection_count();  // First we want to reset the connection count to 0
     ensure_directory_exists(); // Secondly, we want to make sure to create directory to store files returned from server
     int server_fd, client_fd;
     struct sockaddr_in address;
@@ -493,6 +493,7 @@ void handle_dirlist_t(int client_fd)
 
 //  OPTION 3 ------------------------------------------------------------------//
 
+// Structure to define file information
 struct file_info
 {
     char path[PATH_MAX];
@@ -501,17 +502,20 @@ struct file_info
     struct timespec btime;
 };
 
+// Global variables to store found file information and target filename
 static struct file_info found_file;
 static char target_filename[256];
 
 static int find_file_in_directory(const char *dir_path)
 {
+    // Open the directory
     DIR *dir = opendir(dir_path);
     if (dir == NULL)
     {
         return 0;
     }
 
+    // Iterate over entries in the directory
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL)
     {
@@ -520,25 +524,29 @@ static int find_file_in_directory(const char *dir_path)
             // Construct the full path for the file
             snprintf(found_file.path, PATH_MAX, "%s/%s", dir_path, entry->d_name);
 
-            struct statx file_stat;
+            // Get file information
+            struct statx file_stat; // Structure to store file information
+            // Use syscall to get file information using statx syscall
             if (syscall(SYS_statx, AT_FDCWD, found_file.path, AT_SYMLINK_NOFOLLOW, STATX_ALL, &file_stat) == 0)
             {
-                found_file.size = file_stat.stx_size;
-                found_file.mode = file_stat.stx_mode;
-                found_file.btime.tv_sec = file_stat.stx_btime.tv_sec;
-                found_file.btime.tv_nsec = file_stat.stx_btime.tv_nsec;
-                closedir(dir);
-                return 1; // File found
+                // If file information retrieval is successful, update found_file structure
+                found_file.size = file_stat.stx_size;                   // Update file size
+                found_file.mode = file_stat.stx_mode;                   // Update file mode (permissions)
+                found_file.btime.tv_sec = file_stat.stx_btime.tv_sec;   // Update file birth time (seconds)
+                found_file.btime.tv_nsec = file_stat.stx_btime.tv_nsec; // Update file birth time (nanoseconds)
+                closedir(dir);                                          // Close the directory stream
+                return 1;                                               // File found
             }
         }
     }
 
-    // Only search in subdirectories if the file wasn't found in the current directory
+    // Search in subdirectories if the file wasn't found in the current directory
     rewinddir(dir); // Reset directory stream to the beginning
     while ((entry = readdir(dir)) != NULL)
     {
         if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
         {
+            // Recursively search in subdirectory
             char next_dir_path[PATH_MAX];
             snprintf(next_dir_path, PATH_MAX, "%s/%s", dir_path, entry->d_name);
 
@@ -556,13 +564,17 @@ static int find_file_in_directory(const char *dir_path)
 
 void handle_w24fn(int client_fd, const char *filename)
 {
+    // Copy the target filename
     strcpy(target_filename, filename);
+
+    // Get the home directory path
     char *home_dir = getenv("HOME");
     if (!home_dir)
     {
         home_dir = "/";
     }
 
+    // Find the file in the home directory
     if (find_file_in_directory(home_dir))
     {
         char response[1024];
@@ -572,6 +584,7 @@ void handle_w24fn(int client_fd, const char *filename)
         struct tm *tm_info = localtime(&found_file.btime.tv_sec);
         strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", tm_info);
 
+        // Create a response with file details
         snprintf(response, sizeof(response), "File: %s, Size: %ld bytes, Created: %s, Permissions: %o\n",
                  found_file.path, found_file.size, time_str, found_file.mode & 0777); // Mask mode to display standard Unix permissions
 
@@ -579,6 +592,7 @@ void handle_w24fn(int client_fd, const char *filename)
     }
     else
     {
+        // If file is not found, send an error message to the client
         const char *msg = "File not found\n";
         write(client_fd, msg, strlen(msg));
     }
@@ -586,6 +600,7 @@ void handle_w24fn(int client_fd, const char *filename)
 
 //  OPTION 4  ------------------------------------------------------------------//
 
+// Structure to define the size filter
 struct size_filter
 {
     off_t min_size;
@@ -594,6 +609,7 @@ struct size_filter
 
 static struct size_filter global_size_filter;
 
+// Function to check file sizes during file system traversal
 static int check_file_size(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
 {
     // Skip hidden directories and hidden files
@@ -603,8 +619,10 @@ static int check_file_size(const char *fpath, const struct stat *sb, int typefla
         return FTW_CONTINUE; // Skip hidden directories and files
     }
 
+    // Check if the file is a regular file and its size is within the specified range
     if (typeflag == FTW_F && sb->st_size >= global_size_filter.min_size && sb->st_size <= global_size_filter.max_size)
     {
+        // Append the file path to the temporary file list
         FILE *fp = fopen(TEMP_FILE_LIST, "a");
         if (fp)
         {
@@ -617,17 +635,11 @@ static int check_file_size(const char *fpath, const struct stat *sb, int typefla
 
 void handle_w24fz(int client_fd, const char *sizeRange)
 {
+    // Variables to store the size range
     long size1, size2;
     sscanf(sizeRange, "%ld %ld", &size1, &size2);
 
-    // Validate the size range
-    // if (size1 > size2 || size1 < 0 || size2 < 0)
-    // {
-    //     char *msg = "Invalid size range.\n";
-    //     write(client_fd, msg, strlen(msg));
-    //     return;
-    // }
-
+    // Updating the global size filter with the specified size range
     global_size_filter.min_size = size1;
     global_size_filter.max_size = size2;
 
@@ -641,6 +653,7 @@ void handle_w24fz(int client_fd, const char *sizeRange)
     struct stat list_stat;
     if (stat(TEMP_FILE_LIST, &list_stat) == 0 && list_stat.st_size > 0)
     {
+        // Prepare to create a tar.gz file from the list of found files
         char tarFilePath[1024];
         snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
         char tarCommand[1024];
@@ -654,11 +667,11 @@ void handle_w24fz(int client_fd, const char *sizeRange)
         {
             char *msg = "Tar file created and sent.\n";
             write(client_fd, msg, strlen(msg));
-            // Logic to send the tar file should be here
         }
         else
         {
-            char *msg = "Success\n";
+            // If there is an error in creating the tar.gz file, send an error message to the client
+            char *msg = "Error creating tar file.\n";
             write(client_fd, msg, strlen(msg));
         }
     }
@@ -677,18 +690,22 @@ void handle_w24fz(int client_fd, const char *sizeRange)
 static char *extensions[MAX_EXTENSIONS];
 static int ext_count = 0;
 
+// Function to check file extensions during file system traversal
 static int check_file_extension(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
 {
+    // Check if the file is a regular file and the first character of the base name is not a dot
     if (typeflag == FTW_F && fpath[ftwbuf->base] != '.')
     {
         const char *ext = strrchr(fpath, '.');
         if (ext)
         {
             ext++; // Move past the dot
+            // Compare the extension with the list of specified extensions
             for (int i = 0; i < ext_count; i++)
             {
                 if (strcmp(ext, extensions[i]) == 0)
                 {
+                    // If the extension matches, append the file path to the temporary file list
                     FILE *fp = fopen(TEMP_FILE_LIST, "a");
                     if (fp)
                     {
@@ -705,53 +722,31 @@ static int check_file_extension(const char *fpath, const struct stat *sb, int ty
 
 void handle_w24ft(int client_fd, const char *extensionList)
 {
-    // Reset extension count for each call
-    ext_count = 0;
-
-    // Parse the extension list and count the extensions
-    char *token = strtok((char *)extensionList, " ");
-    while (token)
-    {
-        if (ext_count < MAX_EXTENSIONS)
-        {
-            extensions[ext_count++] = token;
-            token = strtok(NULL, " ");
-        }
-        else
-        {
-            write(client_fd, "Too many file types specified. Max 3 allowed.\n", 45);
-            return;
-        }
-    }
-
-    if (ext_count == 0)
-    {
-        write(client_fd, "No file types specified.\n", 26);
-        return;
-    }
-
     // Clear the temporary file list
     fclose(fopen(TEMP_FILE_LIST, "w"));
 
+    // Walk through the file system from the home directory
     nftw(getenv("HOME"), check_file_extension, 20, FTW_PHYS);
 
+    // Check if the temporary file list is not empty
     struct stat statbuf;
     if (stat(TEMP_FILE_LIST, &statbuf) == 0 && statbuf.st_size > 0)
     {
+        // Prepare to create a tar.gz file from the list of found files
         char tarFilePath[1024];
         snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
         char tarCommand[1024];
         snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
 
+        // Create the tar.gz file
         if (system(tarCommand) == 0)
         {
             char *msg = "Tar file created.\n";
             write(client_fd, msg, strlen(msg));
-            // Code to send the file to the client goes here
         }
         else
         {
-            char *msg = "Success\n";
+            char *msg = "Error creating tar file.\n";
             write(client_fd, msg, strlen(msg));
         }
     }
@@ -766,48 +761,16 @@ void handle_w24ft(int client_fd, const char *extensionList)
 
 //  OPTION 6 ------------------------------------------------------------------//
 
-// Utility function to convert date string to time_t
-time_t parse_date_db(const char *date_str)
-{
-    struct tm tm = {0};
-
-    // Validate the date format strictly as YYYY-MM-DD
-    if (strlen(date_str) != 10)
-    {
-        return -1; // Length must be exactly 10 characters for valid YYYY-MM-DD format
-    }
-
-    // Check for correct delimiter positions
-    if (date_str[4] != '-' || date_str[7] != '-')
-    {
-        return -1; // Delimiters must be at the correct positions
-    }
-
-    // Parse the date string
-    if (strptime(date_str, "%Y-%m-%d", &tm) == NULL)
-    {
-        return -1; // Parsing error
-    }
-
-    // Validate ranges (optional, strptime does some checking but more could be done if necessary)
-    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31)
-    {
-        return -1;
-    }
-
-    // Return time in seconds since the epoch
-    return mktime(&tm);
-}
-
 // File check callback for nftw
 static int check_file_date_db(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
 {
-    // Only include regular files and check against the global threshold time
+    // Including regular files and check against the global threshold time
     if (typeflag == FTW_F && sb->st_ctime <= global_threshold_time)
     {
         FILE *fp = fopen(TEMP_FILE_LIST, "a");
         if (fp)
         {
+            // Writing the file path to the temporary file list
             fprintf(fp, "%s\n", fpath);
             fclose(fp);
         }
@@ -820,9 +783,10 @@ static time_t global_threshold_time;
 
 void handle_w24fdb(int client_fd, const char *dateStr)
 {
-    global_threshold_time = parse_date_db(dateStr);
+    global_threshold_time = parse_date(dateStr); // Parse the date string to get the threshold time
     if (global_threshold_time == -1)
     {
+        // If the date format is invalid, send an error message to the client
         const char *msg = "Invalid date format. Accepted format is (YYYY-MM-DD)\n";
         write(client_fd, msg, strlen(msg));
         return;
@@ -832,21 +796,23 @@ void handle_w24fdb(int client_fd, const char *dateStr)
     fclose(fopen(TEMP_FILE_LIST, "w"));
 
     // Walk through the file system from the home directory
-    nftw(getenv("HOME"), check_file_date_db, 20, FTW_PHYS);
+    nftw(getenv("HOME"), check_file_date_da, 20, FTW_PHYS);
 
     // Prepare to create a tar.gz file from the list of found files
     char tarFilePath[1024];
     snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
     char tarCommand[1024];
     snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
+
     if (system(tarCommand) == 0)
     {
-        struct stat tarStat;
+        struct stat tarStat; // struct to store the tar file stats
+
+        // If the tar.gz file is created successfully
         if (stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0)
         {
             char *msg = "Tar file created and sent.\n";
             write(client_fd, msg, strlen(msg));
-            // Here should be the logic to actually send the file to the client
         }
         else
         {
@@ -856,18 +822,19 @@ void handle_w24fdb(int client_fd, const char *dateStr)
     }
     else
     {
-        char *msg = "Failed\n";
+        // If there is an error in creating the tar.gz file, send an error message to the client
+        char *msg = "Error creating tar file.\n";
         write(client_fd, msg, strlen(msg));
     }
 
-    // Cleanup
+    // Cleanup to reomve temp tar file
     unlink(TEMP_FILE_LIST);
 }
 
-// ------------------------------------------------------------------//
+//  OPTION 7 ------------------------------------------------------------------//
 
 // Utility function to convert date string to time_t
-time_t parse_date_da(const char *date_str)
+time_t parse_date(const char *date_str)
 {
     struct tm tm = {0};
 
@@ -902,12 +869,13 @@ time_t parse_date_da(const char *date_str)
 // File check callback for nftw
 static int check_file_date_da(const char *fpath, const struct stat *sb, int typeflag, struct FTW *ftwbuf)
 {
-    // Only include regular files and check against the global threshold time
+    // Including regular files and check against the global threshold time
     if (typeflag == FTW_F && sb->st_ctime >= global_threshold_time)
     {
         FILE *fp = fopen(TEMP_FILE_LIST, "a");
         if (fp)
         {
+            // Writing the file path to the temporary file list
             fprintf(fp, "%s\n", fpath);
             fclose(fp);
         }
@@ -920,9 +888,10 @@ static time_t global_threshold_time;
 
 void handle_w24fda(int client_fd, const char *dateStr)
 {
-    global_threshold_time = parse_date_da(dateStr);
+    global_threshold_time = parse_date(dateStr); // Parse the date string to get the threshold time
     if (global_threshold_time == -1)
     {
+        // If the date format is invalid, send an error message to the client
         const char *msg = "Invalid date format. Accepted format is (YYYY-MM-DD)\n";
         write(client_fd, msg, strlen(msg));
         return;
@@ -939,14 +908,16 @@ void handle_w24fda(int client_fd, const char *dateStr)
     snprintf(tarFilePath, sizeof(tarFilePath), "%s/w24project/temp.tar.gz", getenv("HOME"));
     char tarCommand[1024];
     snprintf(tarCommand, sizeof(tarCommand), "tar -czf %s -T %s --transform='s|.*/||' 2> /dev/null", tarFilePath, TEMP_FILE_LIST);
+
     if (system(tarCommand) == 0)
     {
-        struct stat tarStat;
+        struct stat tarStat; // struct to store the tar file stats
+
+        // If the tar.gz file is created successfully
         if (stat(tarFilePath, &tarStat) == 0 && tarStat.st_size > 0)
         {
             char *msg = "Tar file created and sent.\n";
             write(client_fd, msg, strlen(msg));
-            // Here should be the logic to actually send the file to the client
         }
         else
         {
@@ -956,10 +927,11 @@ void handle_w24fda(int client_fd, const char *dateStr)
     }
     else
     {
-        char *msg = "Success\n";
+        // If there is an error in creating the tar.gz file, send an error message to the client
+        char *msg = "Error creating tar file.\n";
         write(client_fd, msg, strlen(msg));
     }
 
-    // Cleanup
+    // Cleanup to reomve temp tar file
     unlink(TEMP_FILE_LIST);
 }
