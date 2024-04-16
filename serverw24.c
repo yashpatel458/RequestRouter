@@ -1,10 +1,17 @@
 // serverw24.c
+
+/*
+    ✨ ASP SECTION 5
+    🚀 Submitted by:
+    👨🏻‍💻 Yash Patel - 110128551 && Malhar Raval - 110128144
+*/
+
 #define _GNU_SOURCE
-#include <fcntl.h> // Definition of AT_* constants
-#include <unistd.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
+// Defining constant STATX_BTIME for specific operations if not already defined because statx is a more recent addition and may not be available on older systems. It requires a kernel version of 4.11 or newer.
 #if !defined(STATX_BTIME)
 #define STATX_BTIME 0x00000800U
 #endif
@@ -25,25 +32,28 @@
 #include <limits.h>
 #include <tar.h>
 #include <sys/syscall.h>
-#include <arpa/inet.h> // For inet_addr and htons
+#include <arpa/inet.h>
 
-#define PORT 8080
-#define MIRROR1_IP "127.0.0.1" // Change to your actual mirror1 IP address
-#define MIRROR1_PORT 8081
+// Define constants for server ports and IP addresses
+#define PORT 8080              // serverw24 port
+#define MIRROR1_IP "127.0.0.1" // mirror1 IP address
+#define MIRROR1_PORT 8081      // mirror1 port
+#define MIRROR2_IP "127.0.0.1" // mirror2 IP address
+#define MIRROR2_PORT 8082      // mirror2 port
 
-#define MIRROR2_IP "127.0.0.1" // Change to your actual mirror2 IP address
-#define MIRROR2_PORT 8082
-
+// Define constants for file paths and limits
 #define PATH_MAX 4096
 #define MAX_EXTENSIONS 3
 #define TAR_FILE "/w24project/temp.tar.gz"
 #define TAR_FILE_Date "/tmp/filtered_files.tar.gz"
 #define TEMP_FILE_LIST "filelist.txt"
-#define MAX_DIRS 10000 // Adjust based on the expected number of directories
+#define MAX_DIRS 10000 // Expected number of directories
 #define CONNECTION_COUNTER_FILE "connection_count.txt"
+
 // Global variable to hold the threshold date as time_t
 static time_t global_threshold_time;
 
+// Function prototypes for handling client requests
 void crequest(int client_fd);
 void handle_dirlist_a(int client_fd);
 void handle_dirlist_t(int client_fd);
@@ -53,6 +63,10 @@ void handle_w24ft(int client_fd, const char *extensions);
 void handle_w24fdb(int client_fd, const char *date);
 void handle_w24fda(int client_fd, const char *date);
 
+/*
+This function checks if path w24project exists in the home directory with the help of struct stat
+if it doesn't exist, it creates the directory with read, write and execute permission for the user
+*/
 void ensure_directory_exists()
 {
     char path[1024];
@@ -61,10 +75,14 @@ void ensure_directory_exists()
 
     if (stat(path, &st) == -1)
     {
-        mkdir(path, 0700); // Adjust permissions as necessary
+        mkdir(path, 0700);
     }
 }
 
+/*
+This function reset_connection_count opens a file specified by CONNECTION_COUNTER_FILE and writes '0' to it, effectively resetting the connection count.
+If the file cannot be opened, it outputs an error message.
+*/
 void reset_connection_count()
 {
     FILE *file = fopen(CONNECTION_COUNTER_FILE, "w");
@@ -79,7 +97,10 @@ void reset_connection_count()
     }
 }
 
-// Function to read the current connection count
+/*
+The function read_connection_count opens a file specified by CONNECTION_COUNTER_FILE in read mode, reads an integer from it into count, and then returns this count.
+If the file cannot be opened, it returns 0.
+*/
 int read_connection_count()
 {
     FILE *file = fopen(CONNECTION_COUNTER_FILE, "r");
@@ -92,7 +113,9 @@ int read_connection_count()
     return count;
 }
 
-// Function to increment and save the connection count
+/*
+The function increment_connection_count reads the current connection count from a file, increments it by one, and then writes the updated count back to the file. 
+*/
 void increment_connection_count()
 {
     int count = read_connection_count();
@@ -104,10 +127,15 @@ void increment_connection_count()
     }
 }
 
-// Function to determine which server to use
+/*
+The function determine_server takes an integer count as input and determines which server to use based on this count. 
+For counts 1 to 3, it returns 1 (indicating serverw24); 
+for counts 4 to 6, it returns 2 (indicating mirror1); 
+for counts 7 to 9, it returns 3 (indicating mirror2). 
+For counts 10 and above, it rotates among all three servers.
+*/
 int determine_server(int count)
 {
-    // Adjust the modulus and conditions based on your specific rotation needs
     if (count <= 3)
         return 1; // serverw24
     else if (count <= 6)
@@ -118,23 +146,27 @@ int determine_server(int count)
         return ((count - 1) % 3) + 1; // Rotate among all three servers
 }
 
+/* 
+The function redirect_to_mirror establishes a connection to a mirror server specified by ip and port, and then continuously forwards data between the original client and the mirror server. 
+If the connection to the mirror server fails, it outputs an error message and returns. If the connection is successful, it creates a child process that reads data from the original client, sends it to the mirror server, reads the response from the mirror server, and sends it back to the original client. 
+This process continues indefinitely until the connection to the mirror server is closed.
+*/
 void redirect_to_mirror(int original_client_fd, const char *ip, int port)
 {
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    struct sockaddr_in mirror_addr;
+    int m_sock_fd = socket(AF_INET, SOCK_STREAM, 0); // Create a new socket for communication with the mirror server
+    struct sockaddr_in mirror_addr; // struct for mirror address
 
-    mirror_addr.sin_family = AF_INET;
-    mirror_addr.sin_port = htons(port);
-    mirror_addr.sin_addr.s_addr = inet_addr(ip);
+    mirror_addr.sin_family = AF_INET;  // Address family for IPv4
+    mirror_addr.sin_port = htons(port);  // htons() - converts the port number to network byte order | host to network short/long
+    mirror_addr.sin_addr.s_addr = inet_addr(ip); // inet_addr -  converts converts the IP address in dotted-decimal notation (like "127.0.0.1") to the appropriate binary format.
 
-    if (connect(sock, (struct sockaddr *)&mirror_addr, sizeof(mirror_addr)) < 0)
+    if (connect(m_sock_fd, (struct sockaddr *)&mirror_addr, sizeof(mirror_addr)) < 0)
     {
         perror("Connect failed");
         return;
     }
 
-    // Forward the original client's request to the mirror
-    int pid = fork();
+    int pid = fork(); // Create a new process to handle communication with the mirror server
 
     if (pid == 0)
     {
@@ -144,42 +176,35 @@ void redirect_to_mirror(int original_client_fd, const char *ip, int port)
             int bytes_read = read(original_client_fd, buffer, sizeof(buffer));
             if (bytes_read > 0)
             {
-                send(sock, buffer, bytes_read, 0);
+                send(m_sock_fd, buffer, bytes_read, 0); // Send data to the mirror
 
                 // Wait for the response from the mirror and send it back to the original client
-                bytes_read = read(sock, buffer, sizeof(buffer));
+                bytes_read = read(m_sock_fd, buffer, sizeof(buffer));
                 if (bytes_read > 0)
                 {
                     send(original_client_fd, buffer, bytes_read, 0);
                 }
             }
         }
-    close(sock); // Close the connection to the mirror
+        close(m_sock_fd); // Close the connection to the mirror
     }
 }
 
 int main()
 {
-    reset_connection_count();
-    ensure_directory_exists();
+    reset_connection_count(); // First we want to reset the connection count to 0
+    ensure_directory_exists(); // Secondly, we want to make sure to create directory to store files returned from server
     int server_fd, client_fd;
     struct sockaddr_in address;
     int opt = 1;
     int addrlen = sizeof(address);
 
-    // signal(SIGCHLD, SIG_IGN); // Prevent zombie processes
-
-    server_fd = socket(AF_INET, SOCK_STREAM, 0); // socket() - creates a listening socket
+    server_fd = socket(AF_INET, SOCK_STREAM, 0); // socket() - creates a listening socket with IPv4 and TCP connection
     if (server_fd < 0)
     {
         perror("Socket creation failed");
         exit(EXIT_FAILURE);
     }
-    /*
-    ARG1 // AF_INET - Address family for IPv4
-    ARG2 // SOCK_STREAM - Type of socket (TCP) // SOCK_DGRAM - Type of socket (UDP)
-    ARG3 // 0 - Protocol (0 means use default protocol for the given socket type)
-    */
 
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
     address.sin_family = AF_INET;         // Address family for IPv4
@@ -188,18 +213,7 @@ int main()
 
     bind(server_fd, (struct sockaddr *)&address, sizeof(address)); // bind() - binds to IP and port address
 
-    /*
-    ARG1 // server_fd - socket descriptor
-    ARG2 // (struct sockaddr *)&address - pointer to the address structure
-    ARG3 // sizeof(address) - size of the address structure
-    */
-
     listen(server_fd, 100); // server listens for incoming client connections
-
-    /*
-    ARG1 // server_fd - socket descriptor
-    ARG2 // 3 - maximum number of client connections that can be queued
-    */
 
     while (1)
     {
@@ -758,12 +772,14 @@ time_t parse_date_db(const char *date_str)
     struct tm tm = {0};
 
     // Validate the date format strictly as YYYY-MM-DD
-    if (strlen(date_str) != 10) {
+    if (strlen(date_str) != 10)
+    {
         return -1; // Length must be exactly 10 characters for valid YYYY-MM-DD format
     }
 
     // Check for correct delimiter positions
-    if (date_str[4] != '-' || date_str[7] != '-') {
+    if (date_str[4] != '-' || date_str[7] != '-')
+    {
         return -1; // Delimiters must be at the correct positions
     }
 
@@ -774,7 +790,8 @@ time_t parse_date_db(const char *date_str)
     }
 
     // Validate ranges (optional, strptime does some checking but more could be done if necessary)
-    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31) {
+    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31)
+    {
         return -1;
     }
 
@@ -855,12 +872,14 @@ time_t parse_date_da(const char *date_str)
     struct tm tm = {0};
 
     // Validate the date format strictly as YYYY-MM-DD
-    if (strlen(date_str) != 10) {
+    if (strlen(date_str) != 10)
+    {
         return -1; // Length must be exactly 10 characters for valid YYYY-MM-DD format
     }
 
     // Check for correct delimiter positions
-    if (date_str[4] != '-' || date_str[7] != '-') {
+    if (date_str[4] != '-' || date_str[7] != '-')
+    {
         return -1; // Delimiters must be at the correct positions
     }
 
@@ -871,7 +890,8 @@ time_t parse_date_da(const char *date_str)
     }
 
     // Validate ranges (optional, strptime does some checking but more could be done if necessary)
-    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31) {
+    if (tm.tm_year < 0 || tm.tm_mon < 0 || tm.tm_mday < 0 || tm.tm_mon > 11 || tm.tm_mday > 31)
+    {
         return -1;
     }
 
