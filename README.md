@@ -29,7 +29,7 @@ RequestRouter is a multi-server load balancing system designed to efficiently di
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/RequestRouter.git
+   git clone https://github.com/yashpatel458/RequestRouter.git
    ```
 2. **Navigate to the project directory:**
    ```bash
